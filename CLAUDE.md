@@ -3,11 +3,80 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
-WIP
+
+**Project:** Auto Invoice Collector - Automated invoice and receipt collection system
+
+**Purpose:** Automatically collect invoices and receipts from Gmail, extract metadata via OCR, and organize them in Google Drive with proper naming and folder structure.
+
+**Technology Stack:**
+- Runtime: Google Apps Script (V8)
+- Language: TypeScript (transpiled to JavaScript)
+- Build: Rollup
+- Testing: Jest
+- OCR/AI: Gemini API (gemini-1.5-flash)
+- Development: clasp CLI
+
+**Current Status:** MVP Phase 1 Complete
+- Gmail search and PDF attachment extraction
+- Gemini OCR for service name and billing month extraction
+- Google Drive organization by year-month folders
+- Processing log with duplicate detection
+- Error notification system
 
 This document provides guidelines for AI assistants working on this codebase, focusing on GAS-specific development practices and workflows.
 
 ## Critical Rules
+
+### 0. Development Workflow Requirements
+
+**ALWAYS follow this workflow before starting any work:**
+
+1. **Check GitHub Issues First**
+   ```bash
+   # Review open issues to understand current project status
+   gh issue list
+
+   # Check specific issue details
+   gh issue view <issue-number>
+   ```
+
+2. **Create GitHub Issue Before Coding**
+   - For new features, bug fixes, or significant changes
+   - Document requirements, acceptance criteria, and context
+   - Use appropriate labels (enhancement, bug, documentation, etc.)
+   - Example:
+   ```bash
+   gh issue create --title "Add email notification for processing errors" \
+     --body "Description and acceptance criteria..." \
+     --label "enhancement"
+   ```
+
+3. **Create Feature Branch Before Any File Creation/Modification**
+   ```bash
+   # ALWAYS create a branch before making changes
+   git checkout -b feature/description
+   # OR
+   git checkout -b fix/description
+   # OR
+   git checkout -b docs/description
+   ```
+
+4. **Close Issues via Commits**
+   - Reference issue numbers in commit messages
+   - Use closing keywords: Closes #N, Fixes #N, Resolves #N
+   - Example:
+   ```bash
+   git commit -m "feat: add error notification system
+
+   Implement email notifications for processing errors.
+
+   Closes #3"
+   ```
+
+5. **Create PR and Get Approval**
+   - **NEVER merge locally and push to main**
+   - Always create PR via CLI and merge through GitHub
+   - See Git Workflow section below for details
 
 ### 1. Attribution & Commit Messages
 **NEVER include AI references in:**
@@ -31,20 +100,45 @@ git commit -m "fix: Resolve timezone conversion errors"
 ```
 
 ### 2. Git Workflow
+
+**IMPORTANT:** Always create feature branches before any file modifications. Never work directly on main.
+
 ```bash
-# Always use feature branches
+# 1. Start new work - Create feature branch
 git checkout main && git pull
 git checkout -b feature/description
 
-# After work completion
-git add . && git commit -m "type(scope): description"
-git push origin feature/description
-# Create PR on GitHub
+# 2. Make changes and commit
+git add .
+git commit -m "type(scope): description
 
-# Cleanup after merge
+Detailed description of changes.
+
+Closes #N"
+
+# 3. Push to remote
+git push origin feature/description
+
+# 4. Create PR via CLI (NOT on GitHub webpage)
+gh pr create --title "Feature: Description" \
+  --body "## Changes
+- Change 1
+- Change 2
+
+## Related
+Closes #N" \
+  --base main
+
+# 5. Merge PR via CLI (after approval)
+# Get PR number from previous command or use:
+gh pr list
+gh pr merge <PR-number> --squash --delete-branch
+
+# 6. Cleanup after merge
 git checkout main && git pull
-git branch -d feature/description
-git fetch --prune
+git branch -d feature/description      # Delete local branch
+git push origin --delete feature/description  # Delete remote branch (if not auto-deleted)
+git fetch --prune                      # Clean up remote tracking branches
 ```
 
 **Branch Naming:**
@@ -53,6 +147,14 @@ git fetch --prune
 - `docs/` - Documentation
 - `refactor/` - Code refactoring
 - `test/` - Test additions
+
+**PR Best Practices:**
+- Always create PR via `gh pr create`
+- Include clear title and description
+- Reference related issues with `Closes #N`
+- Merge via `gh pr merge` with `--squash` flag
+- Use `--delete-branch` to auto-cleanup remote branch
+- Never use `git merge` locally and push to main
 
 ### 3. Commit Message Format
 Use conventional commits:
@@ -69,7 +171,71 @@ Types: feat, fix, docs, style, refactor, test, chore
 ## Google Apps Script Development
 
 ### Project Structure
-WIP
+
+```
+auto-invoice-collector/
+├── .clasp.json                  # Clasp configuration
+├── .claspignore                 # Files to exclude from GAS
+├── appsscript.json              # GAS manifest (OAuth scopes, timezone)
+├── package.json                 # Node.js dependencies
+├── tsconfig.json                # TypeScript configuration
+├── rollup.config.mjs            # Rollup bundler configuration
+├── jest.config.cjs              # Jest test configuration
+│
+├── src/                         # Source code (TypeScript)
+│   ├── main.ts                  # Entry point & triggers
+│   ├── config.ts                # Service configurations
+│   │
+│   ├── modules/
+│   │   ├── gmail/
+│   │   │   ├── GmailSearcher.ts           # Gmail message search
+│   │   │   └── AttachmentExtractor.ts     # PDF attachment extraction
+│   │   │
+│   │   ├── drive/
+│   │   │   ├── FolderManager.ts           # Drive folder management
+│   │   │   └── FileUploader.ts            # File upload to Drive
+│   │   │
+│   │   ├── ocr/
+│   │   │   └── GeminiOcrService.ts        # Gemini API OCR integration
+│   │   │
+│   │   ├── naming/
+│   │   │   └── FileNamingService.ts       # File naming logic
+│   │   │
+│   │   ├── logging/
+│   │   │   └── ProcessingLogger.ts        # Google Sheets logging
+│   │   │
+│   │   └── notifications/
+│   │       └── Notifier.ts                # Email notifications
+│   │
+│   ├── types/
+│   │   └── index.ts             # TypeScript type definitions
+│   │
+│   └── utils/
+│       ├── logger.ts            # Logging utilities
+│       └── dateUtils.ts         # Date manipulation utilities
+│
+├── test/                        # Jest tests
+│   ├── dateUtils.test.ts        # Unit tests
+│   └── integration/
+│       └── main.integration.test.ts  # Integration tests
+│
+├── dist/                        # Build output (generated)
+│   └── bundle.js                # Compiled & bundled JavaScript
+│
+├── docs/                        # Documentation
+│   └── E2E_TESTING_CHECKLIST.md
+│
+├── SPECIFICATION.md             # Technical specification
+├── DEPLOYMENT.md                # Deployment guide
+├── CLAUDE.md                    # This file
+└── README.md                    # Project overview
+```
+
+**Key Files:**
+- `src/main.ts`: Contains `main()`, `runManually()`, and `setupTrigger()` functions
+- `src/config.ts`: Service configurations (Gmail search queries, extraction types)
+- `dist/bundle.js`: Final output pushed to Google Apps Script
+- `appsscript.json`: OAuth scopes and GAS configuration
 
 ### Code Style for Apps Script
 - Use modern JavaScript features (ES6+) supported by GAS runtime
@@ -285,26 +451,106 @@ Given limited context windows:
 
 ## Project-Specific Configuration
 
-### appsscript.json Example
+### appsscript.json for This Project
 ```json
 {
   "timeZone": "Asia/Tokyo",
-  "dependencies": {
-    "enabledAdvancedServices": [
-      {
-        "userSymbol": "Calendar",
-        "version": "v3",
-        "serviceId": "calendar"
-      }
-    ]
-  },
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
   "oauthScopes": [
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/calendar.events"
-  ],
-  "exceptionLogging": "STACKDRIVER"
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.labels",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.external_request"
+  ]
 }
 ```
 
+## GitHub Issue Management
+
+### Checking Project Status
+
+**Before starting work, always check GitHub Issues:**
+```bash
+# List all open issues
+gh issue list
+
+# List issues with specific label
+gh issue list --label "enhancement"
+gh issue list --label "bug"
+
+# View specific issue details
+gh issue view 5
+
+# Search issues
+gh issue list --search "notification"
+```
+
+### Creating Issues
+
+**Create issues before starting implementation:**
+```bash
+# Create feature issue
+gh issue create \
+  --title "Add processing statistics dashboard" \
+  --body "## Description
+Implement a dashboard to view processing statistics.
+
+## Requirements
+- Display daily/weekly/monthly stats
+- Show error rates
+- Export functionality
+
+## Acceptance Criteria
+- [ ] Dashboard accessible via web
+- [ ] Stats updated in real-time
+- [ ] Export to CSV works" \
+  --label "enhancement"
+
+# Create bug issue
+gh issue create \
+  --title "Fix duplicate file detection" \
+  --body "SHA256 hash comparison failing for large files." \
+  --label "bug"
+```
+
+### Closing Issues
+
+**Close issues via commit messages:**
+```bash
+# Single issue
+git commit -m "feat: add statistics dashboard
+
+Closes #7"
+
+# Multiple issues
+git commit -m "fix: improve duplicate detection
+
+Fixes #8, Closes #9"
+```
+
+**Or close via CLI:**
+```bash
+# Close with comment
+gh issue close 5 --comment "Implemented in PR #12"
+
+# Reopen if needed
+gh issue reopen 5
+```
+
 ## Remember
-The goal is to create reliable, maintainable Apps Script code that efficiently mirrors calendar events. Focus on proper error handling, respecting API quotas, and creating a robust syncing mechanism. Always test thoroughly before deploying triggers.
+The goal is to create a reliable, maintainable invoice collection system that:
+- Automatically processes Gmail invoice attachments
+- Extracts metadata via Gemini OCR
+- Organizes files in Google Drive by year-month
+- Maintains processing logs with duplicate detection
+- Sends error notifications when issues occur
+
+Always:
+1. Check GitHub issues before starting work
+2. Create feature branch before any changes
+3. Create PR via CLI (`gh pr create`)
+4. Reference issues in commits (`Closes #N`)
+5. Merge via CLI (`gh pr merge`)
+6. Clean up branches after merge
