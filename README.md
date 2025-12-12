@@ -189,27 +189,66 @@ The following scopes are required (configured in `appsscript.json`):
 - Gmail/Drive API: Free
 - Gemini API (gemini-1.5-flash): ~¥2/month for 50 invoices
 
-## Next Steps
+## Deployment
 
-1. **Complete MVP Implementation**:
-   - [ ] Implement main processing orchestration
-   - [ ] Add processing log to Google Sheets
-   - [ ] Add error notification system
-   - [ ] Write integration tests
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions including:
+- Initial setup and configuration
+- Google Apps Script deployment
+- Script Properties configuration
+- Manual and automated testing
+- Trigger setup
+- Troubleshooting guide
 
-2. **Testing**:
-   - [ ] Test with real invoices
-   - [ ] Verify Gemini OCR accuracy
-   - [ ] Test duplicate handling
+## Testing
 
-3. **Future Phases**:
+### Unit and Integration Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm test -- --coverage
+```
+
+### E2E Testing
+
+See [docs/E2E_TESTING_CHECKLIST.md](docs/E2E_TESTING_CHECKLIST.md) for comprehensive end-to-end testing checklist.
+
+## Status
+
+### MVP Phase 1 - ✅ Complete
+
+Core functionality implemented and tested:
+- ✅ Gmail search and attachment extraction
+- ✅ Gemini OCR integration for data extraction
+- ✅ Google Drive folder management and file upload
+- ✅ Processing logger with duplicate detection
+- ✅ Error notification system
+- ✅ Main orchestration logic
+- ✅ Integration tests (22 tests passing)
+- ✅ Deployment documentation
+
+**Ready for production deployment**
+
+### Next Steps
+
+1. **Production Deployment** (Issue #6):
+   - Deploy to Google Apps Script
+   - Configure Script Properties
+   - Set up daily trigger
+   - Monitor for 1-2 weeks
+
+2. **Future Phases**:
    - Phase 2: Email body to PDF conversion (Cloud Run)
    - Phase 3: URL login & download automation
 
 ## Documentation
 
 - [SPECIFICATION.md](SPECIFICATION.md) - Full technical specification
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Complete deployment guide
 - [CLAUDE.md](CLAUDE.md) - AI assistant guidelines for this project
+- [docs/E2E_TESTING_CHECKLIST.md](docs/E2E_TESTING_CHECKLIST.md) - E2E testing checklist
 
 ## License
 
