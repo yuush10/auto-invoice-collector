@@ -65,7 +65,8 @@ Verify that both `dist/bundle.js` and `appsscript.json` are uploaded.
 
 ```bash
 # Open in Apps Script editor
-clasp open
+clasp open-script
+# or: npm run open
 ```
 
 ## Step 3: Prepare Google Drive and Sheets
@@ -149,7 +150,7 @@ After running:
 
 ```bash
 # View logs locally
-clasp logs
+clasp tail-logs
 
 # Or in Apps Script editor:
 # View → Executions
@@ -218,7 +219,7 @@ After the trigger is set up:
 1. Wait for the next scheduled run (or test with `runManually`)
 2. Check execution logs:
    ```bash
-   clasp logs
+   clasp tail-logs
    ```
 3. Review the Processing Log sheet for new entries
 4. Check email for summary notifications
@@ -341,10 +342,10 @@ npm run push
 
 ```bash
 # Recent logs
-clasp logs
+clasp tail-logs
 
 # Follow logs in real-time
-clasp logs --watch
+clasp tail-logs --watch
 
 # In Apps Script editor:
 # View → Executions
