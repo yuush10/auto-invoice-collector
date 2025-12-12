@@ -14,7 +14,7 @@ import { FileUploader } from './modules/drive/FileUploader';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
-import { ProcessingResult, ProcessingError } from './types';
+import { ProcessingResult } from './types';
 import { AppLogger } from './utils/logger';
 
 /**
@@ -305,13 +305,8 @@ function setupTrigger(): void {
   Logger.log('Daily trigger created successfully');
 }
 
-// Export for GAS
-declare const global: {
-  main: typeof main;
-  runManually: typeof runManually;
-  setupTrigger: typeof setupTrigger;
-};
-
-global.main = main;
-global.runManually = runManually;
-global.setupTrigger = setupTrigger;
+// Export functions to GAS global scope
+// In Google Apps Script, 'this' at the top level refers to the global scope
+(globalThis as any).main = main;
+(globalThis as any).runManually = runManually;
+(globalThis as any).setupTrigger = setupTrigger;
