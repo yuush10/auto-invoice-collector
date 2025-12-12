@@ -9,6 +9,7 @@ export default {
     format: 'iife',
     name: 'AutoInvoiceCollector',
     banner: '/* Auto Invoice Collector - Google Apps Script */\n',
+    extend: true,  // Extend global 'this' instead of creating isolated scope
     globals: {
       'google-apps-script': 'GoogleAppsScript'
     }
