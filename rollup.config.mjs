@@ -12,7 +12,22 @@ export default {
     extend: true,  // Extend global 'this' instead of creating isolated scope
     globals: {
       'google-apps-script': 'GoogleAppsScript'
-    }
+    },
+    footer: `
+// Top-level function declarations required by Google Apps Script
+// These delegate to the functions defined in the IIFE above
+function main() {
+  return globalThis.main();
+}
+
+function runManually() {
+  return globalThis.runManually();
+}
+
+function setupTrigger() {
+  return globalThis.setupTrigger();
+}
+`
   },
   plugins: [
     resolve({
