@@ -17,32 +17,58 @@ export interface ServiceConfig {
  * Add new services here as needed
  */
 export const SERVICES: ServiceConfig[] = [
+  // MVP Phase 1: Attachment-based services
   {
-    name: 'AWS',
-    searchQuery: 'from:aws-billing@amazon.com subject:請求書',
+    name: 'Anthropic',
+    searchQuery: 'from:invoice+statements@mail.anthropic.com',
     extractionType: 'attachment'
   },
   {
-    name: 'Google Cloud',
-    searchQuery: 'from:billing-noreply@google.com',
+    name: 'Studio',
+    searchQuery: 'from:invoice+statements+acct_19TMcIBXp4blWMEQ@stripe.com',
     extractionType: 'attachment'
   },
   {
-    name: 'Azure',
-    searchQuery: 'from:azure-noreply@microsoft.com',
+    name: 'IVRy',
+    searchQuery: 'from:invoice+statements@ivry.jp',
     extractionType: 'attachment'
   },
   {
     name: 'Slack',
-    searchQuery: 'from:feedback@slack.com subject:領収書',
-    extractionType: 'url',
-    urlPattern: /https:\/\/slack\.com\/billing\/.*invoice/,
-    loginRequired: true
+    searchQuery: 'from:feedback@slack.com',
+    extractionType: 'attachment'
   },
   {
-    name: 'GitHub',
-    searchQuery: 'from:billing@github.com',
+    name: 'AWS',
+    searchQuery: 'from:no-reply@tax-and-invoicing.us-east-1.amazonaws.com',
     extractionType: 'attachment'
+  },
+  {
+    name: 'Zoom',
+    searchQuery: 'from:billing@zoom.us',
+    extractionType: 'attachment'
+  },
+  {
+    name: 'Zapier',
+    searchQuery: 'from:billing@mail.zapier.com',
+    extractionType: 'attachment'
+  },
+  {
+    name: 'Google Workspace',
+    searchQuery: 'from:payments-noreply@google.com',
+    extractionType: 'attachment'
+  },
+
+  // Phase 2: Email body to PDF conversion (not yet implemented)
+  {
+    name: 'Canva',
+    searchQuery: 'from:no-reply@account.canva.com',
+    extractionType: 'body'
+  },
+  {
+    name: 'Mailchimp',
+    searchQuery: 'from:no-reply@mailchimp.com',
+    extractionType: 'body'
   }
 ];
 
