@@ -12,7 +12,9 @@
     "test:watch": "jest --config jest.config.cjs --watch",
     "login": "clasp login",
     "logout": "clasp logout",
-    "deploy": "npm run build && clasp push && clasp deploy"
+    "open": "clasp open-script",
+    "logs": "clasp tail-logs",
+    "deploy": "npm run build && clasp push && clasp create-deployment"
   },
   "keywords": [
     "google-apps-script",
