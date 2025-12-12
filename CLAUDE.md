@@ -366,10 +366,10 @@ clasp pull
 clasp push
 
 # Open project in Apps Script editor
-clasp open
+clasp open-script
 
 # View logs
-clasp logs
+clasp tail-logs
 ```
 
 #### Testing

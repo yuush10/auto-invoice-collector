@@ -87,10 +87,12 @@ clasp create --title "Auto Invoice Collector" --type standalone
 npm run push
 
 # Open project in Apps Script editor
-clasp open
+npm run open
+# or: clasp open-script
 
 # View logs
-clasp logs
+npm run logs
+# or: clasp tail-logs
 
 # Deploy
 npm run deploy
