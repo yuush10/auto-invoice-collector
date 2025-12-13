@@ -31,6 +31,14 @@ function setupTrigger() {
 function cleanupFailedMessages() {
   return globalThis.cleanupFailedMessages();
 }
+
+function diagnosticAnthropicEmails() {
+  return globalThis.diagnosticAnthropicEmails();
+}
+
+function cleanupAnthropicProcessedLabel() {
+  return globalThis.cleanupAnthropicProcessedLabel();
+}
 `
   },
   plugins: [
