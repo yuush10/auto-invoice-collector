@@ -1,6 +1,9 @@
 /**
- * Cleanup utility to retry failed messages
- * Run this once after fixing blocking issues
+ * Cleanup utilities for debugging and re-processing emails
+ *
+ * These functions help when you need to:
+ * - Retry failed messages after fixing errors
+ * - Re-process specific service emails (e.g., after code changes)
  */
 
 import { Config } from './config';
@@ -9,6 +12,9 @@ import { AppLogger } from './utils/logger';
 /**
  * Remove the "processed" label from messages that had errors
  * This allows them to be retried on the next run
+ *
+ * Usage: Call this function after fixing code bugs or configuration issues
+ * that caused processing errors. Then run main() to retry those messages.
  */
 function cleanupFailedMessages(): void {
   AppLogger.info('Starting cleanup of failed messages');
@@ -68,89 +74,38 @@ function cleanupFailedMessages(): void {
 }
 
 /**
- * Diagnostic function to check what Anthropic emails exist
- * Tests multiple search queries to find the correct one
+ * Remove "processed" label AND spreadsheet log entries for emails matching a Gmail query
+ * This allows complete re-processing of those emails
+ *
+ * @param gmailQuery - Gmail search query (e.g., "from:mail.anthropic.com")
+ * @param serviceName - Human-readable service name for logging (e.g., "Anthropic")
+ *
+ * Usage examples:
+ * - cleanupProcessedEmails("from:mail.anthropic.com", "Anthropic")
+ * - cleanupProcessedEmails("from:billing@zoom.us", "Zoom")
+ * - cleanupProcessedEmails("from:feedback@slack.com", "Slack")
+ *
+ * This is useful when:
+ * - You've updated document type detection logic and want to re-classify files
+ * - You've changed filename generation and want to regenerate files
+ * - You've added new extraction features and want to re-extract data
  */
-function diagnosticAnthropicEmails(): void {
-  AppLogger.info('=== Diagnostic: Searching for Anthropic emails ===');
-
-  const queries = [
-    'from:mail.anthropic.com',
-    'from:anthropic.com',
-  ];
-
-  for (const query of queries) {
-    try {
-      AppLogger.info(`\n--- Testing query: "${query}" ---`);
-      const threads = GmailApp.search(query);
-      AppLogger.info(`Found ${threads.length} threads (without filter)`);
-
-      if (threads.length > 0) {
-        const messages = threads[0].getMessages();
-        const firstMessage = messages[0];
-
-        AppLogger.info('First matching email:');
-        AppLogger.info(`  Subject: ${firstMessage.getSubject()}`);
-        AppLogger.info(`  From: ${firstMessage.getFrom()}`);
-        AppLogger.info(`  To: ${firstMessage.getTo()}`);
-        AppLogger.info(`  Date: ${firstMessage.getDate()}`);
-        AppLogger.info(`  Attachments: ${firstMessage.getAttachments().length}`);
-
-        // Check labels - THIS IS THE KEY PART
-        const labels = threads[0].getLabels();
-        const labelNames = labels.map(l => l.getName()).join(', ');
-        AppLogger.info(`  Labels: ${labelNames || 'none'}`);
-
-        const hasProcessedLabel = labels.some(l => l.getName() === 'processed');
-        if (hasProcessedLabel) {
-          AppLogger.info(`  ⚠️  HAS "processed" LABEL - This is why it's being filtered out!`);
-        }
-
-        if (firstMessage.getAttachments().length > 0) {
-          AppLogger.info('  Attachment names:');
-          firstMessage.getAttachments().forEach((att, i) => {
-            AppLogger.info(`    ${i + 1}. ${att.getName()} (${att.getContentType()})`);
-          });
-        }
-      }
-
-      // Test with -label:processed filter (what the script actually uses)
-      const queryWithFilter = `${query} -label:processed`;
-      AppLogger.info(`\nTesting with filter: "${queryWithFilter}"`);
-      const threadsFiltered = GmailApp.search(queryWithFilter);
-      AppLogger.info(`Found ${threadsFiltered.length} threads (WITH -label:processed filter)`);
-
-      if (threads.length > 0 && threadsFiltered.length === 0) {
-        AppLogger.info(`✓ CONFIRMED: Emails exist but are filtered out by -label:processed`);
-      }
-
-    } catch (error) {
-      AppLogger.error(`Error with query "${query}"`, error as Error);
-    }
-  }
-
-  AppLogger.info('\n=== Diagnostic complete ===');
-}
-
-/**
- * Remove "processed" label AND spreadsheet log entries from Anthropic emails to allow re-processing
- */
-function cleanupAnthropicProcessedLabel(): void {
-  AppLogger.info('Removing "processed" label and log entries from Anthropic emails');
+function cleanupProcessedEmails(gmailQuery: string, serviceName: string): void {
+  AppLogger.info(`Removing "processed" label and log entries for ${serviceName} emails`);
 
   try {
-    // Step 1: Get Anthropic message IDs
-    const threads = GmailApp.search('from:mail.anthropic.com');
-    AppLogger.info(`Found ${threads.length} Anthropic email threads`);
+    // Step 1: Get message IDs matching the query
+    const threads = GmailApp.search(gmailQuery);
+    AppLogger.info(`Found ${threads.length} ${serviceName} email threads`);
 
-    const anthropicMessageIds = new Set<string>();
+    const messageIds = new Set<string>();
     threads.forEach(thread => {
       thread.getMessages().forEach(msg => {
-        anthropicMessageIds.add(msg.getId());
+        messageIds.add(msg.getId());
       });
     });
 
-    AppLogger.info(`Found ${anthropicMessageIds.size} Anthropic messages total`);
+    AppLogger.info(`Found ${messageIds.size} ${serviceName} messages total`);
 
     // Step 2: Remove Gmail label
     const label = GmailApp.getUserLabelByName('processed');
@@ -180,10 +135,10 @@ function cleanupAnthropicProcessedLabel(): void {
     const data = sheet.getDataRange().getValues();
     const rowsToDelete: number[] = [];
 
-    // Find rows with Anthropic message IDs (iterate backwards to safely delete)
+    // Find rows with matching message IDs (iterate backwards to safely delete)
     for (let i = data.length - 1; i >= 1; i--) {
       const messageId = data[i][1]; // Message ID column
-      if (anthropicMessageIds.has(messageId)) {
+      if (messageIds.has(messageId)) {
         rowsToDelete.push(i + 1); // +1 because sheet rows are 1-indexed
       }
     }
@@ -196,15 +151,14 @@ function cleanupAnthropicProcessedLabel(): void {
     });
 
     AppLogger.info(`Deleted ${deletedCount} log entries from spreadsheet`);
-    AppLogger.info('Cleanup complete! You can now run main() to re-process Anthropic emails');
+    AppLogger.info(`Cleanup complete! You can now run main() to re-process ${serviceName} emails`);
 
   } catch (error) {
-    AppLogger.error('Error during cleanup', error as Error);
+    AppLogger.error(`Error during ${serviceName} cleanup`, error as Error);
     throw error;
   }
 }
 
 // Export to global scope
 (globalThis as any).cleanupFailedMessages = cleanupFailedMessages;
-(globalThis as any).diagnosticAnthropicEmails = diagnosticAnthropicEmails;
-(globalThis as any).cleanupAnthropicProcessedLabel = cleanupAnthropicProcessedLabel;
+(globalThis as any).cleanupProcessedEmails = cleanupProcessedEmails;
