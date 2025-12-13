@@ -68,34 +68,53 @@ function cleanupFailedMessages(): void {
 }
 
 /**
- * Diagnostic function to check what emails exist from a specific domain
- * without the -label:processed filter
+ * Diagnostic function to check what Anthropic emails exist
+ * Tests multiple search queries to find the correct one
  */
-function diagnosticSearch(searchQuery: string): void {
-  AppLogger.info(`Running diagnostic search: ${searchQuery}`);
+function diagnosticAnthropicEmails(): void {
+  AppLogger.info('=== Diagnostic: Searching for Anthropic emails ===');
 
-  try {
-    const threads = GmailApp.search(searchQuery);
-    AppLogger.info(`Found ${threads.length} threads`);
+  const queries = [
+    'anthropic',
+    'from:mail.anthropic.com',
+    'from:anthropic.com',
+    'subject:anthropic',
+    'subject:receipt anthropic',
+    'from:ush10yu@gmail.com anthropic'
+  ];
 
-    threads.slice(0, 5).forEach((thread, index) => {
-      const messages = thread.getMessages();
-      const firstMessage = messages[0];
+  for (const query of queries) {
+    try {
+      AppLogger.info(`\nTrying query: "${query}"`);
+      const threads = GmailApp.search(query);
+      AppLogger.info(`Found ${threads.length} threads`);
 
-      AppLogger.info(`Thread ${index + 1}:`);
-      AppLogger.info(`  Subject: ${firstMessage.getSubject()}`);
-      AppLogger.info(`  From: ${firstMessage.getFrom()}`);
-      AppLogger.info(`  To: ${firstMessage.getTo()}`);
-      AppLogger.info(`  Date: ${firstMessage.getDate()}`);
-      AppLogger.info(`  Attachments: ${firstMessage.getAttachments().length}`);
-    });
+      if (threads.length > 0) {
+        const messages = threads[0].getMessages();
+        const firstMessage = messages[0];
 
-  } catch (error) {
-    AppLogger.error('Error during diagnostic search', error as Error);
-    throw error;
+        AppLogger.info('First matching email:');
+        AppLogger.info(`  Subject: ${firstMessage.getSubject()}`);
+        AppLogger.info(`  From: ${firstMessage.getFrom()}`);
+        AppLogger.info(`  To: ${firstMessage.getTo()}`);
+        AppLogger.info(`  Date: ${firstMessage.getDate()}`);
+        AppLogger.info(`  Attachments: ${firstMessage.getAttachments().length}`);
+
+        if (firstMessage.getAttachments().length > 0) {
+          AppLogger.info('  Attachment names:');
+          firstMessage.getAttachments().forEach((att, i) => {
+            AppLogger.info(`    ${i + 1}. ${att.getName()} (${att.getContentType()})`);
+          });
+        }
+      }
+    } catch (error) {
+      AppLogger.error(`Error with query "${query}"`, error as Error);
+    }
   }
+
+  AppLogger.info('\n=== Diagnostic complete ===');
 }
 
 // Export to global scope
 (globalThis as any).cleanupFailedMessages = cleanupFailedMessages;
-(globalThis as any).diagnosticSearch = diagnosticSearch;
+(globalThis as any).diagnosticAnthropicEmails = diagnosticAnthropicEmails;
