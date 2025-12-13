@@ -27,6 +27,10 @@ function runManually() {
 function setupTrigger() {
   return globalThis.setupTrigger();
 }
+
+function cleanupFailedMessages() {
+  return globalThis.cleanupFailedMessages();
+}
 `
   },
   plugins: [
