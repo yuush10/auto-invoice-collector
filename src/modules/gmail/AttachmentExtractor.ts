@@ -44,9 +44,21 @@ export class AttachmentExtractor {
           const hasReceiptInFilename = DocTypeDetector.hasReceiptKeywords(name);
           const hasInvoiceInFilename = DocTypeDetector.hasInvoiceKeywords(name);
 
+          // Get blob data - convert only if already a PDF content type
+          let pdfBlob: GoogleAppsScript.Base.Blob;
+          if (isPdfByContentType) {
+            // Safe to convert when content type is already PDF-related
+            pdfBlob = attachment.getAs('application/pdf');
+          } else {
+            // For non-PDF MIME types (like application/octet-stream),
+            // just use the blob as-is and set correct content type
+            pdfBlob = attachment.copyBlob().setContentType('application/pdf');
+            AppLogger.debug(`Set content type to application/pdf for ${name}`);
+          }
+
           attachments.push({
             name: name,
-            data: attachment.getAs('application/pdf'),
+            data: pdfBlob,
             contentType: contentType,
             hasReceiptInFilename,
             hasInvoiceInFilename
