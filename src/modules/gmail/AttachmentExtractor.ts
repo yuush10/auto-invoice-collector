@@ -3,11 +3,14 @@
  */
 
 import { AppLogger } from '../../utils/logger';
+import { DocTypeDetector } from '../../utils/docTypeDetector';
 
 export interface Attachment {
   name: string;
   data: GoogleAppsScript.Base.Blob;
   contentType: string;
+  hasReceiptInFilename: boolean;
+  hasInvoiceInFilename: boolean;
 }
 
 export class AttachmentExtractor {
@@ -37,10 +40,16 @@ export class AttachmentExtractor {
             AppLogger.info(`Detected PDF by filename despite non-PDF MIME type: ${name} (${contentType})`);
           }
 
+          // Check filename for doc type keywords
+          const hasReceiptInFilename = DocTypeDetector.hasReceiptKeywords(name);
+          const hasInvoiceInFilename = DocTypeDetector.hasInvoiceKeywords(name);
+
           attachments.push({
             name: name,
             data: attachment.getAs('application/pdf'),
-            contentType: contentType
+            contentType: contentType,
+            hasReceiptInFilename,
+            hasInvoiceInFilename
           });
         }
       });

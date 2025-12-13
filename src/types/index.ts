@@ -13,6 +13,25 @@ export interface ExtractedData {
   eventMonth: string;
   confidence: number;
   notes: string;
+  hasReceiptInContent?: boolean;
+  hasInvoiceInContent?: boolean;
+}
+
+export interface EmailContext {
+  from: string;
+  subject: string;
+  body: string;
+}
+
+export interface DocTypeDetectionFlags {
+  hasReceiptInSubject: boolean;
+  hasInvoiceInSubject: boolean;
+  hasReceiptInBody: boolean;
+  hasInvoiceInBody: boolean;
+  hasReceiptInFilename: boolean;
+  hasInvoiceInFilename: boolean;
+  hasReceiptInContent: boolean;
+  hasInvoiceInContent: boolean;
 }
 
 export interface ProcessingLog {

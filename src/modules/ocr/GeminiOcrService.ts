@@ -4,6 +4,7 @@
 
 import { ExtractedData } from '../../types';
 import { AppLogger } from '../../utils/logger';
+import { DocTypeDetector } from '../../utils/docTypeDetector';
 
 export class GeminiOcrService {
   private apiKey: string;
@@ -109,6 +110,10 @@ export class GeminiOcrService {
       const response = JSON.parse(responseText);
       const text = response.candidates[0].content.parts[0].text;
 
+      // Check for doc type keywords in the full OCR text
+      const hasReceiptInContent = DocTypeDetector.hasReceiptKeywords(text);
+      const hasInvoiceInContent = DocTypeDetector.hasInvoiceKeywords(text);
+
       // Extract JSON from markdown code block if present
       const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\{[\s\S]*\}/);
       const jsonText = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : text;
@@ -121,7 +126,9 @@ export class GeminiOcrService {
         eventDates: data.event_dates || [],
         eventMonth: data.event_month || '',
         confidence: data.confidence || 0,
-        notes: data.notes || ''
+        notes: data.notes || '',
+        hasReceiptInContent,
+        hasInvoiceInContent
       };
     } catch (error) {
       AppLogger.error('Error parsing Gemini response', error as Error);

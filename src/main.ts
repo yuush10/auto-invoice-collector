@@ -14,8 +14,9 @@ import { FileUploader } from './modules/drive/FileUploader';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
-import { ProcessingResult } from './types';
+import { ProcessingResult, DocTypeDetectionFlags } from './types';
 import { AppLogger } from './utils/logger';
+import { DocTypeDetector } from './utils/docTypeDetector';
 import './cleanup'; // Include cleanup utilities
 
 /**
@@ -187,6 +188,16 @@ class InvoiceProcessor {
       return;
     }
 
+    // Extract email subject and body for docType detection
+    const emailSubject = message.getSubject();
+    const emailBody = message.getPlainBody().substring(0, 5000); // Limit to 5000 chars for performance
+
+    // Check email subject and body for docType keywords
+    const hasReceiptInSubject = DocTypeDetector.hasReceiptKeywords(emailSubject);
+    const hasInvoiceInSubject = DocTypeDetector.hasInvoiceKeywords(emailSubject);
+    const hasReceiptInBody = DocTypeDetector.hasReceiptKeywords(emailBody);
+    const hasInvoiceInBody = DocTypeDetector.hasInvoiceKeywords(emailBody);
+
     AppLogger.info(`Processing ${attachments.length} attachments from message ${messageId}`);
 
     attachments.forEach((attachment, index) => {
@@ -202,19 +213,36 @@ class InvoiceProcessor {
         // Extract data via OCR
         const context = {
           from: message.getFrom(),
-          subject: message.getSubject()
+          subject: emailSubject
         };
 
         const extracted = this.ocrService.extract(attachment.data, context);
+
+        // Combine all docType detection flags
+        const detectionFlags: DocTypeDetectionFlags = {
+          hasReceiptInSubject,
+          hasInvoiceInSubject,
+          hasReceiptInBody,
+          hasInvoiceInBody,
+          hasReceiptInFilename: attachment.hasReceiptInFilename,
+          hasInvoiceInFilename: attachment.hasInvoiceInFilename,
+          hasReceiptInContent: extracted.hasReceiptInContent || false,
+          hasInvoiceInContent: extracted.hasInvoiceInContent || false
+        };
+
+        // Determine final docType from all sources
+        const finalDocType = DocTypeDetector.determineDocType(detectionFlags);
+        DocTypeDetector.logDetectionDetails(detectionFlags, finalDocType);
 
         // Check confidence
         const needsReview = extracted.confidence < 0.7;
         const status = needsReview ? 'needs-review' : 'success';
 
-        // Generate file name
+        // Generate file name with docType
         const fileName = this.namingService.generate(
           extracted.serviceName,
-          extracted.eventMonth
+          extracted.eventMonth,
+          finalDocType
         );
 
         // Get or create month folder
@@ -234,7 +262,7 @@ class InvoiceProcessor {
           attachmentIndex: index,
           sha256,
           sourceType: 'attachment',
-          docType: extracted.docType,
+          docType: finalDocType,
           serviceName: extracted.serviceName,
           eventMonth: extracted.eventMonth,
           driveFileId: fileId,

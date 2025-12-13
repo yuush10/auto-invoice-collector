@@ -2,17 +2,27 @@
  * File naming service
  */
 
+import { DocumentType } from '../../types';
 import { AppLogger } from '../../utils/logger';
+import { DocTypeDetector } from '../../utils/docTypeDetector';
 
 export class FileNamingService {
+  // Service name mapping for normalization
+  private static readonly SERVICE_NAME_MAPPING: { [key: string]: string } = {
+    'Personal 月額': 'Studio',
+    '電話自動応答サービスIVRy': 'IVRy',
+    'IVRy 電話自動応答サービス': 'IVRy',
+  };
+
   /**
-   * Generate file name from event month and service name
-   * Format: YYYY-MM-ServiceName.pdf
+   * Generate file name from event month, document type, and service name
+   * Format: YYYY-MM-{請求書|領収書}-ServiceName.pdf
    */
-  generate(serviceName: string, eventMonth: string): string {
+  generate(serviceName: string, eventMonth: string, docType: DocumentType): string {
     try {
+      const docTypeString = DocTypeDetector.getDocTypeString(docType);
       const normalizedName = this.normalizeServiceName(serviceName);
-      const fileName = `${eventMonth}-${normalizedName}.pdf`;
+      const fileName = `${eventMonth}-${docTypeString}-${normalizedName}.pdf`;
 
       AppLogger.debug(`Generated file name: ${fileName}`);
 
@@ -25,12 +35,16 @@ export class FileNamingService {
 
   /**
    * Normalize service name for file naming
+   * - Map known service names to canonical forms
    * - Remove invalid file name characters
    * - Limit length to 40 characters
    */
   private normalizeServiceName(name: string): string {
+    // Check if service name needs mapping
+    let normalized = FileNamingService.SERVICE_NAME_MAPPING[name] || name;
+
     // Remove or replace invalid characters: \/:*?"<>|
-    let normalized = name.replace(/[\\/:*?"<>|]/g, '_');
+    normalized = normalized.replace(/[\\/:*?"<>|]/g, '_');
 
     // Trim whitespace
     normalized = normalized.trim();
