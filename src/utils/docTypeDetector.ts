@@ -60,31 +60,64 @@ export class DocTypeDetector {
 
   /**
    * Determine document type from detection flags
-   * Receipt takes precedence if found in any source
+   * Priority order (highest to lowest):
+   * 1. PDF content (most authoritative - what the document actually is)
+   * 2. Filename (second most authoritative)
+   * 3. Email body
+   * 4. Email subject (least authoritative - may mention both invoice and receipt)
    * Default to receipt if neither found
    */
   static determineDocType(flags: DocTypeDetectionFlags): DocumentType {
-    // Receipt takes precedence
-    const hasReceipt =
-      flags.hasReceiptInSubject ||
-      flags.hasReceiptInBody ||
-      flags.hasReceiptInFilename ||
-      flags.hasReceiptInContent;
-
-    if (hasReceipt) {
-      AppLogger.debug('Document type detected as 領収書 (receipt)');
+    // Priority 1: Check PDF content first (most authoritative)
+    if (flags.hasInvoiceInContent && !flags.hasReceiptInContent) {
+      AppLogger.debug('Document type detected as 請求書 (invoice) from PDF content');
+      return 'invoice';
+    }
+    if (flags.hasReceiptInContent && !flags.hasInvoiceInContent) {
+      AppLogger.debug('Document type detected as 領収書 (receipt) from PDF content');
       return 'receipt';
     }
 
-    // Check for invoice
-    const hasInvoice =
-      flags.hasInvoiceInSubject ||
-      flags.hasInvoiceInBody ||
-      flags.hasInvoiceInFilename ||
-      flags.hasInvoiceInContent;
+    // Priority 2: Check filename
+    if (flags.hasInvoiceInFilename && !flags.hasReceiptInFilename) {
+      AppLogger.debug('Document type detected as 請求書 (invoice) from filename');
+      return 'invoice';
+    }
+    if (flags.hasReceiptInFilename && !flags.hasInvoiceInFilename) {
+      AppLogger.debug('Document type detected as 領収書 (receipt) from filename');
+      return 'receipt';
+    }
 
-    if (hasInvoice) {
-      AppLogger.debug('Document type detected as 請求書 (invoice)');
+    // Priority 3: Check email body
+    if (flags.hasInvoiceInBody && !flags.hasReceiptInBody) {
+      AppLogger.debug('Document type detected as 請求書 (invoice) from email body');
+      return 'invoice';
+    }
+    if (flags.hasReceiptInBody && !flags.hasInvoiceInBody) {
+      AppLogger.debug('Document type detected as 領収書 (receipt) from email body');
+      return 'receipt';
+    }
+
+    // Priority 4: Check email subject (lowest priority)
+    if (flags.hasInvoiceInSubject && !flags.hasReceiptInSubject) {
+      AppLogger.debug('Document type detected as 請求書 (invoice) from email subject');
+      return 'invoice';
+    }
+    if (flags.hasReceiptInSubject && !flags.hasInvoiceInSubject) {
+      AppLogger.debug('Document type detected as 領収書 (receipt) from email subject');
+      return 'receipt';
+    }
+
+    // If both or neither keyword types found, check if any invoice keyword exists
+    // (prefer invoice over receipt when ambiguous, as invoices are more important)
+    const hasAnyInvoice =
+      flags.hasInvoiceInContent ||
+      flags.hasInvoiceInFilename ||
+      flags.hasInvoiceInBody ||
+      flags.hasInvoiceInSubject;
+
+    if (hasAnyInvoice) {
+      AppLogger.debug('Document type detected as 請求書 (invoice) - ambiguous case, preferring invoice');
       return 'invoice';
     }
 
