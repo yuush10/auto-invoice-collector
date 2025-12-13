@@ -7,7 +7,7 @@ import { AppLogger } from '../../utils/logger';
 
 export class GeminiOcrService {
   private apiKey: string;
-  private apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+  private apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
