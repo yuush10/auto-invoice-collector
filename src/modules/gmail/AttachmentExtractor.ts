@@ -19,12 +19,26 @@ export class AttachmentExtractor {
       const attachments: Attachment[] = [];
       const gmailAttachments = message.getAttachments();
 
-      gmailAttachments.forEach(attachment => {
-        const contentType = attachment.getContentType();
+      // Log all attachments for debugging
+      AppLogger.debug(`Message ${message.getId()} has ${gmailAttachments.length} total attachments`);
 
-        if (this.isPdfContentType(contentType)) {
+      gmailAttachments.forEach((attachment, index) => {
+        const contentType = attachment.getContentType();
+        const name = attachment.getName();
+
+        AppLogger.debug(`Attachment ${index}: name="${name}", contentType="${contentType}"`);
+
+        // Check both content type and filename for PDF detection
+        const isPdfByContentType = this.isPdfContentType(contentType);
+        const isPdfByFilename = this.isPdfFilename(name);
+
+        if (isPdfByContentType || isPdfByFilename) {
+          if (isPdfByFilename && !isPdfByContentType) {
+            AppLogger.info(`Detected PDF by filename despite non-PDF MIME type: ${name} (${contentType})`);
+          }
+
           attachments.push({
-            name: attachment.getName(),
+            name: name,
             data: attachment.getAs('application/pdf'),
             contentType: contentType
           });
@@ -42,9 +56,27 @@ export class AttachmentExtractor {
 
   /**
    * Check if content type is PDF
+   * Handles various MIME types that might indicate a PDF
    */
   private isPdfContentType(contentType: string): boolean {
-    return contentType.includes('application/pdf');
+    const pdfTypes = [
+      'application/pdf',
+      'application/x-pdf',
+      'application/acrobat',
+      'application/vnd.pdf',
+      'text/pdf',
+      'text/x-pdf'
+    ];
+
+    const lowerContentType = contentType.toLowerCase();
+    return pdfTypes.some(type => lowerContentType.includes(type));
+  }
+
+  /**
+   * Check if attachment filename suggests it's a PDF
+   */
+  private isPdfFilename(filename: string): boolean {
+    return filename.toLowerCase().endsWith('.pdf');
   }
 
   /**
