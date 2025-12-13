@@ -133,34 +133,70 @@ function diagnosticAnthropicEmails(): void {
 }
 
 /**
- * Remove "processed" label from Anthropic emails to allow re-processing
+ * Remove "processed" label AND spreadsheet log entries from Anthropic emails to allow re-processing
  */
 function cleanupAnthropicProcessedLabel(): void {
-  AppLogger.info('Removing "processed" label from Anthropic emails');
+  AppLogger.info('Removing "processed" label and log entries from Anthropic emails');
 
   try {
-    const label = GmailApp.getUserLabelByName('processed');
-    if (!label) {
-      AppLogger.info('No "processed" label found, nothing to clean up');
-      return;
-    }
-
+    // Step 1: Get Anthropic message IDs
     const threads = GmailApp.search('from:mail.anthropic.com');
     AppLogger.info(`Found ${threads.length} Anthropic email threads`);
 
-    let removedCount = 0;
+    const anthropicMessageIds = new Set<string>();
     threads.forEach(thread => {
-      const hasLabel = thread.getLabels().some(l => l.getName() === 'processed');
-      if (hasLabel) {
-        thread.removeLabel(label);
-        removedCount++;
-        const messages = thread.getMessages();
-        AppLogger.info(`Removed "processed" label from: ${messages[0].getSubject()}`);
-      }
+      thread.getMessages().forEach(msg => {
+        anthropicMessageIds.add(msg.getId());
+      });
     });
 
-    AppLogger.info(`Successfully removed "processed" label from ${removedCount} threads`);
-    AppLogger.info('You can now run main() to process these Anthropic emails');
+    AppLogger.info(`Found ${anthropicMessageIds.size} Anthropic messages total`);
+
+    // Step 2: Remove Gmail label
+    const label = GmailApp.getUserLabelByName('processed');
+    let removedLabelCount = 0;
+    if (label) {
+      threads.forEach(thread => {
+        const hasLabel = thread.getLabels().some(l => l.getName() === 'processed');
+        if (hasLabel) {
+          thread.removeLabel(label);
+          removedLabelCount++;
+        }
+      });
+      AppLogger.info(`Removed "processed" label from ${removedLabelCount} threads`);
+    } else {
+      AppLogger.info('No "processed" label found');
+    }
+
+    // Step 3: Remove spreadsheet log entries
+    const spreadsheet = SpreadsheetApp.openById(Config.getLogSheetId());
+    const sheet = spreadsheet.getSheetByName('ProcessingLog');
+
+    if (!sheet) {
+      AppLogger.info('No ProcessingLog sheet found');
+      return;
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const rowsToDelete: number[] = [];
+
+    // Find rows with Anthropic message IDs (iterate backwards to safely delete)
+    for (let i = data.length - 1; i >= 1; i--) {
+      const messageId = data[i][1]; // Message ID column
+      if (anthropicMessageIds.has(messageId)) {
+        rowsToDelete.push(i + 1); // +1 because sheet rows are 1-indexed
+      }
+    }
+
+    // Delete rows
+    let deletedCount = 0;
+    rowsToDelete.forEach(rowIndex => {
+      sheet.deleteRow(rowIndex);
+      deletedCount++;
+    });
+
+    AppLogger.info(`Deleted ${deletedCount} log entries from spreadsheet`);
+    AppLogger.info('Cleanup complete! You can now run main() to re-process Anthropic emails');
 
   } catch (error) {
     AppLogger.error('Error during cleanup', error as Error);
