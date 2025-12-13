@@ -16,6 +16,7 @@ import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
 import { ProcessingResult } from './types';
 import { AppLogger } from './utils/logger';
+import './cleanup'; // Include cleanup utilities
 
 /**
  * Main function that processes new invoices from Gmail
