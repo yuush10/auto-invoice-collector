@@ -31,6 +31,10 @@ function setupTrigger() {
 function cleanupFailedMessages() {
   return globalThis.cleanupFailedMessages();
 }
+
+function diagnosticSearch(searchQuery) {
+  return globalThis.diagnosticSearch(searchQuery);
+}
 `
   },
   plugins: [
