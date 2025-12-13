@@ -502,20 +502,136 @@ const emailContext = {
 
 ## Implementation Status
 
-- [ ] Phase 1: Service detection improvements (PR #20)
-- [ ] Phase 2: Document type detection (請求書/領収書)
-  - [ ] Email subject check
-  - [ ] Email body check
-  - [ ] Attachment filename check
-  - [ ] PDF content check
-  - [ ] Combined determination logic
-- [ ] Phase 3: Service name mapping (Studio, IVRy, etc.)
-- [ ] Phase 4: End-to-end testing
+### Development Plan Overview
+
+```
+Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
+──────────────   ──────────────     ──────────────      ──────────────
+雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード
+✅ COMPLETED     ✅ COMPLETED       📋 TODO             📋 TODO
+
+├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン
+├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          └─ ホワイトリスト運用
+                 └─ 二重処理防止
+```
+
+---
+
+### Phase 0: 雛形・基盤（3h）- ✅ COMPLETED
+
+**Status**: All infrastructure components deployed and operational
+
+| タスク | 状態 | 成果物 | PR/Commit |
+|---|---|---|---|
+| clasp セットアップ、GASプロジェクト作成 | ✅ | .clasp.json, appsscript.json | Initial setup |
+| DriveルートフォルダID設定、処理台帳Sheet作成 | ✅ | Google Sheets ProcessingLog | Config setup |
+| Time-driven Trigger導入（手動実行も可能に） | ✅ | Daily trigger at 6 AM | PR #28 (OAuth scope fix) |
+
+**Completion Date**: December 2025
+
+---
+
+### Phase 1: Gmail添付 → Drive格納（20h）- ✅ COMPLETED ★MVP
+
+**Status**: Production-ready with enhanced document type detection
+
+| タスク | 工数 | 状態 | 成果物 | PR/Notes |
+|---|---|---|---|---|
+| Gmail検索・メッセージ列挙 | 3h | ✅ | GmailSearcher.ts | PR #20 |
+| 添付取得（PDF/画像→PDF変換） | 3h | ✅ | AttachmentExtractor.ts | PR #22 |
+| Gemini抽出（service_name / event_month） | 5h | ✅ | GeminiOcrService.ts | With OCR |
+| 月次フォルダ作成・命名規則保存 | 4h | ✅ | DriveManager.ts | Auto folder creation |
+| 台帳記録・二重処理防止・エラー処理 | 3h | ✅ | ProcessingLogger.ts | Duplicate detection |
+| needs-review通知（メール） | 2h | ✅ | EmailNotifier.ts | Admin notifications |
+
+**Additional Features** (beyond original plan):
+- ✅ Document type detection (請求書/領収書) with priority-based algorithm (PR #21, #25)
+- ✅ Service-specific search query fixes (PR #24)
+- ✅ Cleanup utilities for debugging (PR #27)
+- ✅ Comprehensive documentation (PR #27)
+
+**Phase 1完了条件**: ✅ 添付PDFが`YYYY-MM-{請求書|領収書}-(SERVICE NAME).pdf`で自動格納される
+
+**Completion Date**: December 2025
+
+---
+
+### Phase 2: メール本文 → Print to PDF（12h）- 📋 TODO
+
+**Status**: Not started
+
+| タスク | 工数 | 状態 | 成果物 |
+|---|---|---|---|
+| Cloud Run環境構築（Node.js + Puppeteer） | 4h | 📋 | Dockerfile |
+| email-to-pdf エンドポイント実装 | 4h | 📋 | renderer/index.ts |
+| GASからIAM認証付き呼び出し | 4h | 📋 | CloudRunClient.ts |
+
+**Use Cases**:
+- AWS invoices (currently showing "No PDF attachments")
+- Services that send invoice data in email body without attachments
+- HTML email invoices
+
+**Priority**: Medium (current Phase 1 handles most services adequately)
+
+---
+
+### Phase 3: URLダウンロード（15h）- 📋 TODO
+
+**Status**: Not started
+
+| タスク | 工数 | 状態 | 成果物 |
+|---|---|---|---|
+| URL抽出・vendorKey判定 | 3h | 📋 | UrlExtractor.ts |
+| vendor別ログイン実装（1〜2ベンダー） | 6h | 📋 | vendors/*.ts |
+| Secret Manager連携 | 4h | 📋 | SecretClient.ts |
+| 統合テスト | 2h | 📋 | E2Eテスト |
+
+**Use Cases**:
+- Services requiring portal login to download invoices
+- Automated invoice retrieval from vendor dashboards
+
+**Priority**: Low (manual download currently acceptable)
+
+---
+
+## Production Status
+
+### ✅ Currently Working
+- Gmail attachment-based invoice collection (8 services)
+- Automatic document type detection (請求書/領収書)
+- Monthly folder organization in Google Drive
+- Duplicate prevention via ProcessingLog
+- Daily automated processing at 6 AM
+- Email notifications for errors
+
+### 📋 Known Limitations
+1. **AWS Invoices**: "No PDF attachments found" - may need Phase 2 (email body to PDF)
+2. **Services without attachments**: Currently skipped - requires Phase 2
+3. **Portal-only invoices**: Requires manual download - would need Phase 3
+
+### 🔄 Monitoring & Maintenance
+- ✅ Execution logs via `clasp logs`
+- ✅ ProcessingLog spreadsheet tracking
+- ✅ Error notifications to admin email
+- 📋 TODO: Monthly summary dashboard
+- 📋 TODO: Service health monitoring
 
 ---
 
 ## Future Enhancements
 
+### Phase 2 Preparation (Email Body to PDF)
+- Research Cloud Run deployment costs
+- Identify services requiring email body conversion
+- Design PDF rendering template
+
+### Phase 3 Preparation (URL Download)
+- Survey vendor login requirements
+- Evaluate headless browser options
+- Design secret management strategy
+
+### General Improvements
 1. **Custom Keywords**: Allow users to define additional keywords via configuration
 2. **Confidence Scoring**: Track which source (subject/body/filename/content) triggered classification
 3. **Manual Override**: UI/function to manually reclassify documents
