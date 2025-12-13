@@ -56,25 +56,56 @@ The system checks **four sources** for document type keywords (in order of check
 - English: `invoice`
 - Japanese: `請求書`
 
-### Detection Algorithm
+### Detection Algorithm (Priority-Based)
+
+The system uses a **priority-based approach** where authoritative sources take precedence over less reliable ones:
+
+**Priority Order** (highest to lowest):
+1. **PDF content** (most authoritative - what the document actually says)
+2. **Attachment filename** (second most authoritative)
+3. **Email body** (third priority)
+4. **Email subject** (lowest priority - may mention both types)
 
 ```
-IF (email_subject contains "receipt" OR email_subject contains "領収書")
-   OR (email_body contains "receipt" OR email_body contains "領収書")
-   OR (filename contains "receipt" OR filename contains "領収書")
-   OR (PDF content contains "receipt" OR PDF content contains "領収書")
-THEN
-   docType = "領収書"
-ELSE IF (email_subject contains "invoice" OR email_subject contains "請求書")
-   OR (email_body contains "invoice" OR email_body contains "請求書")
-   OR (filename contains "invoice" OR filename contains "請求書")
-   OR (PDF content contains "invoice" OR PDF content contains "請求書")
-THEN
+// Priority 1: Check PDF content first
+IF (PDF content has "invoice" AND NOT "receipt") THEN
    docType = "請求書"
+ELSE IF (PDF content has "receipt" AND NOT "invoice") THEN
+   docType = "領収書"
+
+// Priority 2: Check filename
+ELSE IF (filename has "invoice" AND NOT "receipt") THEN
+   docType = "請求書"
+ELSE IF (filename has "receipt" AND NOT "invoice") THEN
+   docType = "領収書"
+
+// Priority 3: Check email body
+ELSE IF (email_body has "invoice" AND NOT "receipt") THEN
+   docType = "請求書"
+ELSE IF (email_body has "receipt" AND NOT "invoice") THEN
+   docType = "領収書"
+
+// Priority 4: Check email subject
+ELSE IF (email_subject has "invoice" AND NOT "receipt") THEN
+   docType = "請求書"
+ELSE IF (email_subject has "receipt" AND NOT "invoice") THEN
+   docType = "領収書"
+
+// Ambiguous case: prefer invoice
+ELSE IF (any source has "invoice" keyword) THEN
+   docType = "請求書"
+
+// Default
 ELSE
-   docType = "領収書" (default)
+   docType = "領収書"
 END IF
 ```
+
+**Key Points**:
+- Each priority level checks for exclusive presence (invoice but not receipt, or vice versa)
+- If both keywords exist at same priority level, move to next level
+- When ambiguous (both types mentioned), prefer invoice (請求書) as more important
+- Default to receipt (領収書) if no keywords found
 
 ### Default Behavior
 
@@ -176,39 +207,60 @@ const hasInvoiceInContent =
 - PDF contains header: "INVOICE" → Invoice
 - PDF contains: "領収書" at top → Receipt
 
-### 5. Final Determination
+### 5. Final Determination (Priority-Based)
 
-**Location**: `src/modules/naming/FileNamingService.ts` or main processing flow
+**Location**: `src/utils/docTypeDetector.ts`
 
-**Method**: `determineDocType()`
+**Method**: `DocTypeDetector.determineDocType()`
 
 ```typescript
-// Pseudo-code
-function determineDocType(
-  hasReceiptInSubject: boolean,
-  hasInvoiceInSubject: boolean,
-  hasReceiptInBody: boolean,
-  hasInvoiceInBody: boolean,
-  hasReceiptInFilename: boolean,
-  hasInvoiceInFilename: boolean,
-  hasReceiptInContent: boolean,
-  hasInvoiceInContent: boolean
-): '請求書' | '領収書' {
-
-  // Receipt takes precedence if found anywhere
-  if (hasReceiptInSubject || hasReceiptInBody ||
-      hasReceiptInFilename || hasReceiptInContent) {
-    return '領収書';
+// Actual implementation
+function determineDocType(flags: DocTypeDetectionFlags): DocumentType {
+  // Priority 1: Check PDF content first (most authoritative)
+  if (flags.hasInvoiceInContent && !flags.hasReceiptInContent) {
+    return 'invoice';
+  }
+  if (flags.hasReceiptInContent && !flags.hasInvoiceInContent) {
+    return 'receipt';
   }
 
-  // Invoice if found anywhere
-  if (hasInvoiceInSubject || hasInvoiceInBody ||
-      hasInvoiceInFilename || hasInvoiceInContent) {
-    return '請求書';
+  // Priority 2: Check filename
+  if (flags.hasInvoiceInFilename && !flags.hasReceiptInFilename) {
+    return 'invoice';
+  }
+  if (flags.hasReceiptInFilename && !flags.hasInvoiceInFilename) {
+    return 'receipt';
+  }
+
+  // Priority 3: Check email body
+  if (flags.hasInvoiceInBody && !flags.hasReceiptInBody) {
+    return 'invoice';
+  }
+  if (flags.hasReceiptInBody && !flags.hasInvoiceInBody) {
+    return 'receipt';
+  }
+
+  // Priority 4: Check email subject (lowest priority)
+  if (flags.hasInvoiceInSubject && !flags.hasReceiptInSubject) {
+    return 'invoice';
+  }
+  if (flags.hasReceiptInSubject && !flags.hasInvoiceInSubject) {
+    return 'receipt';
+  }
+
+  // Ambiguous case: prefer invoice
+  const hasAnyInvoice =
+    flags.hasInvoiceInContent ||
+    flags.hasInvoiceInFilename ||
+    flags.hasInvoiceInBody ||
+    flags.hasInvoiceInSubject;
+
+  if (hasAnyInvoice) {
+    return 'invoice';
   }
 
   // Default to receipt
-  return '領収書';
+  return 'receipt';
 }
 ```
 
@@ -236,12 +288,14 @@ Gmail Message
 [4] OCR Extraction (Gemini API)
     → Extract text from PDF
     → Check for receipt/invoice keywords in content
-    → Return: serviceName, eventMonth, docType, etc.
+    → Return: serviceName, eventMonth, ocrText
     ↓
-[5] Determine Final DocType
-    → Combine all checks (subject, body, filename, content)
-    → Receipt if ANY source has receipt keywords
-    → Invoice if ANY source has invoice keywords
+[5] Determine Final DocType (Priority-Based)
+    → Priority 1: PDF content (most authoritative)
+    → Priority 2: Filename
+    → Priority 3: Email body
+    → Priority 4: Email subject (least authoritative)
+    → Prefer invoice if ambiguous
     → Default to 領収書 if none found
     ↓
 [6] Generate Filename
@@ -256,13 +310,17 @@ Gmail Message
 
 ## Edge Cases
 
-### Case 1: Conflicting Keywords
+### Case 1: Conflicting Keywords (Priority-Based Resolution)
 
-**Example**: Subject contains "invoice" but PDF content contains "領収書"
+**Example**: Email subject contains "Your receipt from Anthropic" but PDF content clearly shows "Invoice"
 
-**Behavior**: Receipt (領収書) takes precedence because it appears in one of the sources.
+**Behavior**: Invoice (請求書) takes precedence because PDF content has higher priority than email subject.
 
-**Rationale**: Being conservative - if there's any indication it's a receipt, treat it as such.
+**Rationale**: The actual PDF content is the most authoritative source for determining document type. Email metadata (subject/body) may generically mention both types, but the PDF shows what the document actually is.
+
+**Real-world example**: Anthropic sends emails with subject "Your receipt from Anthropic" but attaches both:
+- `Invoice-WA7ETDST-0011.pdf` (contains "Invoice" text) → 請求書
+- `Receipt-2791-4706-4686.pdf` (contains "Receipt" text) → 領収書
 
 ### Case 2: No Keywords in Any Source
 

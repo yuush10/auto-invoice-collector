@@ -32,12 +32,8 @@ function cleanupFailedMessages() {
   return globalThis.cleanupFailedMessages();
 }
 
-function diagnosticAnthropicEmails() {
-  return globalThis.diagnosticAnthropicEmails();
-}
-
-function cleanupAnthropicProcessedLabel() {
-  return globalThis.cleanupAnthropicProcessedLabel();
+function cleanupProcessedEmails(gmailQuery, serviceName) {
+  return globalThis.cleanupProcessedEmails(gmailQuery, serviceName);
 }
 `
   },

@@ -8,8 +8,10 @@ This system automatically:
 - Searches Gmail for invoice/receipt emails
 - Extracts PDF attachments
 - Uses Gemini API for OCR to extract service name and billing month
+- **Detects document type** (請求書/invoice or 領収書/receipt) with priority-based keyword matching
 - Organizes files in Google Drive by year-month (YYYY-MM format)
-- Names files as `YYYY-MM-ServiceName.pdf`
+- Names files as `YYYY-MM-{請求書|領収書}-ServiceName.pdf`
+- Logs all processing in Google Sheets with duplicate detection
 
 ## Technology Stack
 
@@ -44,13 +46,14 @@ auto-invoice-collector/
 ├── src/
 │   ├── main.ts                 # Entry point & triggers
 │   ├── config.ts               # Service configurations
+│   ├── cleanup.ts              # Cleanup utilities for debugging
 │   ├── modules/
 │   │   ├── gmail/              # Gmail search & attachment extraction
 │   │   ├── drive/              # Google Drive operations
 │   │   ├── ocr/                # Gemini API integration
 │   │   └── naming/             # File naming logic
 │   ├── types/                  # TypeScript type definitions
-│   └── utils/                  # Utilities (logger, date)
+│   └── utils/                  # Utilities (logger, date, docTypeDetector)
 ├── test/                       # Jest tests
 ├── dist/                       # Build output
 └── docs/                       # Documentation
@@ -139,6 +142,39 @@ Alternatively, run the setup functions in the Apps Script editor.
    - Run the `runManually` function in Apps Script editor
    - Check the logs: `clasp logs`
 
+## Cleanup Utilities
+
+The project includes cleanup functions for debugging and re-processing:
+
+### cleanupFailedMessages()
+Removes the "processed" label from messages that had errors, allowing them to be retried.
+
+**When to use**: After fixing code bugs or configuration issues that caused processing errors.
+
+**Usage**: Run in Apps Script editor, then run `main()` to retry those messages.
+
+### cleanupProcessedEmails(gmailQuery, serviceName)
+Removes both the "processed" label AND spreadsheet log entries for emails matching a Gmail query.
+
+**When to use**:
+- After updating document type detection logic (to re-classify files)
+- After changing filename generation (to regenerate files)
+- After adding new extraction features (to re-extract data)
+
+**Usage examples**:
+```javascript
+// Re-process all Anthropic emails
+cleanupProcessedEmails("from:mail.anthropic.com", "Anthropic")
+
+// Re-process all Zoom emails
+cleanupProcessedEmails("from:billing@zoom.us", "Zoom")
+
+// Re-process all Slack emails
+cleanupProcessedEmails("from:feedback@slack.com", "Slack")
+```
+
+After running cleanup, execute `main()` to re-process those emails.
+
 ## Adding New Services
 
 Edit `src/config.ts` to add new services:
@@ -224,14 +260,16 @@ See [docs/E2E_TESTING_CHECKLIST.md](docs/E2E_TESTING_CHECKLIST.md) for comprehen
 Core functionality implemented and tested:
 - ✅ Gmail search and attachment extraction
 - ✅ Gemini OCR integration for data extraction
+- ✅ **Document type detection** (請求書 vs 領収書) with priority-based algorithm
 - ✅ Google Drive folder management and file upload
 - ✅ Processing logger with duplicate detection
 - ✅ Error notification system
 - ✅ Main orchestration logic
+- ✅ **Cleanup utilities** for debugging and re-processing
 - ✅ Integration tests (22 tests passing)
 - ✅ Deployment documentation
 
-**Ready for production deployment**
+**Ready for production use**
 
 ### Next Steps
 
