@@ -20,7 +20,7 @@ export const SERVICES: ServiceConfig[] = [
   // MVP Phase 1: Attachment-based services
   {
     name: 'Anthropic',
-    searchQuery: 'from:invoice+statements@mail.anthropic.com',
+    searchQuery: 'from:mail.anthropic.com',
     extractionType: 'attachment'
   },
   {
