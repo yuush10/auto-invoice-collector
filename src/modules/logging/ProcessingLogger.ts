@@ -86,7 +86,8 @@ export class ProcessingLogger {
   }
 
   /**
-   * Check if a message + attachment has already been processed
+   * Check if a message + attachment has already been processed successfully
+   * Returns false for messages with error status to allow retrying
    */
   isProcessed(messageId: string, attachmentIndex?: number): boolean {
     try {
@@ -95,6 +96,12 @@ export class ProcessingLogger {
       for (let i = 1; i < data.length; i++) {
         const rowMessageId = data[i][1];
         const rowAttachmentIndex = data[i][2];
+        const rowStatus = data[i][9]; // Status column
+
+        // Skip error entries - allow retrying failed messages
+        if (rowStatus === 'error') {
+          continue;
+        }
 
         if (rowMessageId === messageId) {
           if (attachmentIndex === undefined) {
