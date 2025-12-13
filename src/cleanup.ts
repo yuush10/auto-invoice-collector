@@ -67,5 +67,35 @@ function cleanupFailedMessages(): void {
   }
 }
 
+/**
+ * Diagnostic function to check what emails exist from a specific domain
+ * without the -label:processed filter
+ */
+function diagnosticSearch(searchQuery: string): void {
+  AppLogger.info(`Running diagnostic search: ${searchQuery}`);
+
+  try {
+    const threads = GmailApp.search(searchQuery);
+    AppLogger.info(`Found ${threads.length} threads`);
+
+    threads.slice(0, 5).forEach((thread, index) => {
+      const messages = thread.getMessages();
+      const firstMessage = messages[0];
+
+      AppLogger.info(`Thread ${index + 1}:`);
+      AppLogger.info(`  Subject: ${firstMessage.getSubject()}`);
+      AppLogger.info(`  From: ${firstMessage.getFrom()}`);
+      AppLogger.info(`  To: ${firstMessage.getTo()}`);
+      AppLogger.info(`  Date: ${firstMessage.getDate()}`);
+      AppLogger.info(`  Attachments: ${firstMessage.getAttachments().length}`);
+    });
+
+  } catch (error) {
+    AppLogger.error('Error during diagnostic search', error as Error);
+    throw error;
+  }
+}
+
 // Export to global scope
 (globalThis as any).cleanupFailedMessages = cleanupFailedMessages;
+(globalThis as any).diagnosticSearch = diagnosticSearch;
