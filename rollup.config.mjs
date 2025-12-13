@@ -35,6 +35,10 @@ function cleanupFailedMessages() {
 function diagnosticAnthropicEmails() {
   return globalThis.diagnosticAnthropicEmails();
 }
+
+function cleanupAnthropicProcessedLabel() {
+  return globalThis.cleanupAnthropicProcessedLabel();
+}
 `
   },
   plugins: [
