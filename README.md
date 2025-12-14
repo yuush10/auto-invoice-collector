@@ -112,8 +112,18 @@ Before deploying, you need to set up Script Properties:
    - `ROOT_FOLDER_ID`: Google Drive folder ID for storing invoices
    - `LOG_SHEET_ID`: Google Sheets ID for logging
    - `ADMIN_EMAIL`: Email for error notifications
+   - `CLOUD_RUN_URL` (Phase 2 only): Cloud Run service URL for email-to-pdf
 
 Alternatively, run the setup functions in the Apps Script editor.
+
+### Phase 2 Configuration
+
+For email body to PDF conversion:
+
+1. Deploy Cloud Run service (see [cloud-run/README.md](cloud-run/README.md))
+2. Get the service URL: `gcloud run services describe email-to-pdf --region=asia-northeast1 --format="value(status.url)"`
+3. Add `CLOUD_RUN_URL` to Script Properties
+4. Grant IAM permissions for GAS to invoke the service
 
 ## First Deployment
 
@@ -255,7 +265,7 @@ See [docs/E2E_TESTING_CHECKLIST.md](docs/E2E_TESTING_CHECKLIST.md) for comprehen
 
 ## Status
 
-### MVP Phase 1 - ✅ Complete
+### Phase 1 - ✅ Complete (Production)
 
 Core functionality implemented and tested:
 - ✅ Gmail search and attachment extraction
@@ -269,19 +279,25 @@ Core functionality implemented and tested:
 - ✅ Integration tests (22 tests passing)
 - ✅ Deployment documentation
 
-**Ready for production use**
+**In production use**
 
-### Next Steps
+### Phase 2 - 🚧 In Development
 
-1. **Production Deployment** (Issue #6):
-   - Deploy to Google Apps Script
-   - Configure Script Properties
-   - Set up daily trigger
-   - Monitor for 1-2 weeks
+Email body to PDF conversion (Issue #29):
+- ✅ Cloud Run service architecture
+- ✅ Puppeteer PDF renderer
+- ✅ Express API endpoints (/convert, /health)
+- ✅ IAM authentication
+- ✅ GAS CloudRunClient integration
+- ✅ EmailBodyExtractor module
+- ✅ Main orchestration updates
+- ⏳ Cloud Run deployment (pending)
+- ⏳ End-to-end testing (pending)
 
-2. **Future Phases**:
-   - Phase 2: Email body to PDF conversion (Cloud Run)
-   - Phase 3: URL login & download automation
+### Future Phases
+
+- Phase 3: URL login & download automation (Issue #30)
+- Phase 4: Journal entry auto-generation (Issues #33-#38)
 
 ## Documentation
 

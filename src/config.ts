@@ -99,4 +99,12 @@ export class Config {
   static getAdminEmail(): string {
     return this.getProperty('ADMIN_EMAIL');
   }
+
+  /**
+   * Get Cloud Run service URL for email-to-pdf conversion
+   * This is optional - if not configured, body extraction will be disabled
+   */
+  static getCloudRunUrl(): string {
+    return this.getProperty('CLOUD_RUN_URL');
+  }
 }
