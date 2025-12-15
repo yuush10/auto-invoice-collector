@@ -17,10 +17,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Set Puppeteer environment variables before install to skip Chromium download
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -28,9 +32,8 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Set Puppeteer to use installed Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Remove devDependencies to reduce image size
+RUN npm prune --production
 
 # Expose port
 EXPOSE 8080

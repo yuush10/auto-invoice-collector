@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import { iamAuth } from './middleware/auth';
 import convertRouter from './routes/convert';
 
 const app = express();
@@ -10,13 +9,8 @@ const port = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Allow large HTML payloads
 
-// Apply IAM authentication to all routes except /health
-app.use((req, res, next) => {
-  if (req.path === '/health') {
-    return next();
-  }
-  iamAuth(req, res, next);
-});
+// Note: Authentication is handled by Cloud Run IAM with --no-allow-unauthenticated
+// Cloud Run validates ID tokens before requests reach this application
 
 // Routes
 app.use('/', convertRouter);

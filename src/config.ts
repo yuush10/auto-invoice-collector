@@ -102,9 +102,17 @@ export class Config {
 
   /**
    * Get Cloud Run service URL for email-to-pdf conversion
-   * This is optional - if not configured, body extraction will be disabled
    */
   static getCloudRunUrl(): string {
     return this.getProperty('CLOUD_RUN_URL');
+  }
+
+  /**
+   * Get the service account email used for invoking Cloud Run
+   * This service account must have roles/run.invoker on the Cloud Run service
+   * The Apps Script user must have roles/iam.serviceAccountTokenCreator on this SA
+   */
+  static getInvokerServiceAccount(): string {
+    return this.getProperty('INVOKER_SERVICE_ACCOUNT');
   }
 }
