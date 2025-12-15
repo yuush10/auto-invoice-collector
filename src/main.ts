@@ -8,12 +8,14 @@
 import { Config, SERVICES } from './config';
 import { GmailSearcher } from './modules/gmail/GmailSearcher';
 import { AttachmentExtractor } from './modules/gmail/AttachmentExtractor';
+import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
 import { GeminiOcrService } from './modules/ocr/GeminiOcrService';
 import { FolderManager } from './modules/drive/FolderManager';
 import { FileUploader } from './modules/drive/FileUploader';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
+import { CloudRunClient } from './modules/cloudrun/CloudRunClient';
 import { ProcessingResult, DocTypeDetectionFlags } from './types';
 import { AppLogger } from './utils/logger';
 import { DocTypeDetector } from './utils/docTypeDetector';
@@ -23,12 +25,12 @@ import './cleanup'; // Include cleanup utilities
  * Main function that processes new invoices from Gmail
  * This function is called by the time-based trigger
  */
-function main(): void {
+async function main(): Promise<void> {
   AppLogger.info('Auto Invoice Collector - Starting');
 
   try {
     const processor = new InvoiceProcessor();
-    const result = processor.run();
+    const result = await processor.run();
 
     AppLogger.info(`Processing complete: ${result.processed} processed, ${result.errors.length} errors, ${result.needsReview.length} needs review`);
 
@@ -77,6 +79,7 @@ class InvoiceProcessor {
   private fileUploader: FileUploader;
   private namingService: FileNamingService;
   private logger: ProcessingLogger;
+  private cloudRunClient: CloudRunClient | null;
 
   constructor() {
     this.gmailSearcher = new GmailSearcher();
@@ -86,12 +89,20 @@ class InvoiceProcessor {
     this.fileUploader = new FileUploader();
     this.namingService = new FileNamingService();
     this.logger = new ProcessingLogger(Config.getLogSheetId());
+
+    // Initialize Cloud Run client if URL is configured
+    try {
+      this.cloudRunClient = new CloudRunClient();
+    } catch (error) {
+      AppLogger.info('Cloud Run URL not configured, body extraction disabled');
+      this.cloudRunClient = null;
+    }
   }
 
   /**
    * Run the invoice processing for all configured services
    */
-  run(): ProcessingResult {
+  async run(): Promise<ProcessingResult> {
     const result: ProcessingResult = {
       success: true,
       processed: 0,
@@ -101,15 +112,24 @@ class InvoiceProcessor {
 
     // Process each configured service
     for (const service of SERVICES) {
-      // Only process attachment-based services for MVP
-      if (service.extractionType !== 'attachment') {
-        AppLogger.info(`Skipping ${service.name} (extraction type: ${service.extractionType})`);
-        continue;
-      }
-
       try {
         AppLogger.info(`Processing service: ${service.name}`);
-        const serviceResult = this.processService(service.name, service.searchQuery);
+
+        let serviceResult: ProcessingResult;
+
+        // Route to appropriate processor based on extraction type
+        if (service.extractionType === 'attachment') {
+          serviceResult = this.processService(service.name, service.searchQuery);
+        } else if (service.extractionType === 'body') {
+          if (!this.cloudRunClient) {
+            AppLogger.warn(`Skipping ${service.name}: Cloud Run not configured`);
+            continue;
+          }
+          serviceResult = await this.processServiceBody(service.name, service.searchQuery);
+        } else {
+          AppLogger.info(`Skipping ${service.name} (extraction type: ${service.extractionType} not yet supported)`);
+          continue;
+        }
 
         result.processed += serviceResult.processed;
         result.errors.push(...serviceResult.errors);
@@ -302,6 +322,202 @@ class InvoiceProcessor {
         });
       }
     });
+
+    // Mark message as processed
+    this.gmailSearcher.markAsProcessed(message);
+  }
+
+  /**
+   * Process a service that uses email body extraction (Phase 2)
+   */
+  private async processServiceBody(serviceName: string, searchQuery: string): Promise<ProcessingResult> {
+    const result: ProcessingResult = {
+      success: true,
+      processed: 0,
+      errors: [],
+      needsReview: []
+    };
+
+    try {
+      // Search for messages
+      const messages = this.gmailSearcher.search(searchQuery, true);
+      AppLogger.info(`Found ${messages.length} messages for ${serviceName}`);
+
+      for (const message of messages) {
+        const messageId = message.getId();
+
+        // Check if already processed
+        if (this.logger.isProcessed(messageId)) {
+          AppLogger.debug(`Message ${messageId} already processed, skipping`);
+          continue;
+        }
+
+        try {
+          await this.processBodyMessage(message, serviceName, result);
+          result.processed++;
+        } catch (error) {
+          AppLogger.error(`Error processing message ${messageId}`, error as Error);
+          result.errors.push({
+            messageId,
+            serviceName,
+            error: `${error}`
+          });
+        }
+      }
+    } catch (error) {
+      AppLogger.error(`Error searching for ${serviceName}`, error as Error);
+      throw error;
+    }
+
+    return result;
+  }
+
+  /**
+   * Process a single message with body extraction (Phase 2)
+   */
+  private async processBodyMessage(
+    message: GoogleAppsScript.Gmail.GmailMessage,
+    serviceName: string,
+    result: ProcessingResult
+  ): Promise<void> {
+    const messageId = message.getId();
+
+    if (!this.cloudRunClient) {
+      throw new Error('Cloud Run client not initialized');
+    }
+
+    // Extract email subject and body for pre-validation
+    const emailSubject = message.getSubject();
+    const emailPlainBody = message.getPlainBody().substring(0, 5000);
+
+    // Pre-validate: Check if email contains invoice/receipt keywords BEFORE calling Cloud Run
+    // This saves API costs by not processing non-invoice emails
+    const hasInvoiceKeyword = DocTypeDetector.hasInvoiceKeywords(emailSubject) ||
+                             DocTypeDetector.hasInvoiceKeywords(emailPlainBody);
+    const hasReceiptKeyword = DocTypeDetector.hasReceiptKeywords(emailSubject) ||
+                             DocTypeDetector.hasReceiptKeywords(emailPlainBody);
+
+    if (!hasInvoiceKeyword && !hasReceiptKeyword) {
+      AppLogger.info(`Skipping message ${messageId}: No invoice/receipt keywords found in subject or body`);
+      // Mark as processed to avoid re-processing
+      this.gmailSearcher.markAsProcessed(message);
+      return;
+    }
+
+    // Extract HTML body
+    const htmlBody = EmailBodyExtractor.extractBody(message);
+
+    if (!htmlBody) {
+      AppLogger.warn(`No email body found in message ${messageId}`);
+      return;
+    }
+
+    AppLogger.info(`Converting email body to PDF for message ${messageId}`);
+
+    // Convert HTML to PDF via Cloud Run
+    const convertResult = await this.cloudRunClient.convertEmailBodyToPdf(
+      htmlBody,
+      messageId,
+      serviceName
+    );
+
+    if (!convertResult.success || !convertResult.pdfBlob) {
+      throw new Error(
+        `PDF conversion failed: ${convertResult.error?.message || 'Unknown error'}`
+      );
+    }
+
+    const pdfBlob = convertResult.pdfBlob;
+
+    // Calculate hash for duplicate detection
+    const sha256 = this.attachmentExtractor.calculateHash(pdfBlob);
+
+    if (this.logger.hashExists(sha256)) {
+      AppLogger.info(`Email body PDF is duplicate (hash exists), skipping`);
+      return;
+    }
+
+    // Reuse pre-validation keyword flags for docType detection
+    const hasReceiptInSubject = DocTypeDetector.hasReceiptKeywords(emailSubject);
+    const hasInvoiceInSubject = DocTypeDetector.hasInvoiceKeywords(emailSubject);
+    const hasReceiptInBody = DocTypeDetector.hasReceiptKeywords(emailPlainBody);
+    const hasInvoiceInBody = DocTypeDetector.hasInvoiceKeywords(emailPlainBody);
+
+    // Extract data via OCR
+    const context = {
+      from: message.getFrom(),
+      subject: emailSubject
+    };
+
+    const extracted = this.ocrService.extract(pdfBlob, context);
+
+    // Validate: Skip if billing month is empty (couldn't extract date from content)
+    if (!extracted.eventMonth || extracted.eventMonth.trim() === '') {
+      AppLogger.info(`Skipping message ${messageId}: No billing month could be extracted`);
+      // Mark as processed to avoid re-processing
+      this.gmailSearcher.markAsProcessed(message);
+      return;
+    }
+
+    // Combine all docType detection flags
+    const detectionFlags: DocTypeDetectionFlags = {
+      hasReceiptInSubject,
+      hasInvoiceInSubject,
+      hasReceiptInBody,
+      hasInvoiceInBody,
+      hasReceiptInFilename: false,
+      hasInvoiceInFilename: false,
+      hasReceiptInContent: extracted.hasReceiptInContent || false,
+      hasInvoiceInContent: extracted.hasInvoiceInContent || false
+    };
+
+    // Determine final docType from all sources
+    const finalDocType = DocTypeDetector.determineDocType(detectionFlags);
+    DocTypeDetector.logDetectionDetails(detectionFlags, finalDocType);
+
+    // Check confidence
+    const needsReview = extracted.confidence < 0.7;
+    const status = needsReview ? 'needs-review' : 'success';
+
+    // Generate file name with docType
+    const fileName = this.namingService.generate(
+      extracted.serviceName,
+      extracted.eventMonth,
+      finalDocType
+    );
+
+    // Get or create month folder
+    const folder = this.folderManager.getOrCreateMonthFolder(extracted.eventMonth);
+
+    // Upload file with duplicate handling
+    const fileId = this.fileUploader.uploadWithDuplicateHandling(
+      folder,
+      fileName,
+      pdfBlob
+    );
+
+    // Log processing
+    this.logger.log({
+      timestamp: new Date(),
+      messageId,
+      attachmentIndex: 0,
+      sha256,
+      sourceType: 'body',
+      docType: finalDocType,
+      serviceName: extracted.serviceName,
+      eventMonth: extracted.eventMonth,
+      driveFileId: fileId,
+      status,
+      errorMessage: needsReview ? `Low confidence: ${extracted.confidence}` : undefined
+    });
+
+    if (needsReview) {
+      result.needsReview.push(
+        `${fileName} - Confidence: ${extracted.confidence.toFixed(2)} - ${extracted.notes}`
+      );
+    }
+
+    AppLogger.info(`Successfully processed email body: ${fileName}`);
 
     // Mark message as processed
     this.gmailSearcher.markAsProcessed(message);
