@@ -16,13 +16,13 @@ export class FileNamingService {
 
   /**
    * Generate file name from event month, document type, and service name
-   * Format: YYYY-MM-{請求書|領収書}-ServiceName.pdf
+   * Format: YYYY-MM-ServiceName-{請求書|領収書}.pdf
    */
   generate(serviceName: string, eventMonth: string, docType: DocumentType): string {
     try {
       const docTypeString = DocTypeDetector.getDocTypeString(docType);
       const normalizedName = this.normalizeServiceName(serviceName);
-      const fileName = `${eventMonth}-${docTypeString}-${normalizedName}.pdf`;
+      const fileName = `${eventMonth}-${normalizedName}-${docTypeString}.pdf`;
 
       AppLogger.debug(`Generated file name: ${fileName}`);
 
