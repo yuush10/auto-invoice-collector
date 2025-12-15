@@ -386,6 +386,24 @@ class InvoiceProcessor {
       throw new Error('Cloud Run client not initialized');
     }
 
+    // Extract email subject and body for pre-validation
+    const emailSubject = message.getSubject();
+    const emailPlainBody = message.getPlainBody().substring(0, 5000);
+
+    // Pre-validate: Check if email contains invoice/receipt keywords BEFORE calling Cloud Run
+    // This saves API costs by not processing non-invoice emails
+    const hasInvoiceKeyword = DocTypeDetector.hasInvoiceKeywords(emailSubject) ||
+                             DocTypeDetector.hasInvoiceKeywords(emailPlainBody);
+    const hasReceiptKeyword = DocTypeDetector.hasReceiptKeywords(emailSubject) ||
+                             DocTypeDetector.hasReceiptKeywords(emailPlainBody);
+
+    if (!hasInvoiceKeyword && !hasReceiptKeyword) {
+      AppLogger.info(`Skipping message ${messageId}: No invoice/receipt keywords found in subject or body`);
+      // Mark as processed to avoid re-processing
+      this.gmailSearcher.markAsProcessed(message);
+      return;
+    }
+
     // Extract HTML body
     const htmlBody = EmailBodyExtractor.extractBody(message);
 
@@ -419,14 +437,11 @@ class InvoiceProcessor {
       return;
     }
 
-    // Extract email subject and body for docType detection
-    const emailSubject = message.getSubject();
-    const emailBody = message.getPlainBody().substring(0, 5000);
-
+    // Reuse pre-validation keyword flags for docType detection
     const hasReceiptInSubject = DocTypeDetector.hasReceiptKeywords(emailSubject);
     const hasInvoiceInSubject = DocTypeDetector.hasInvoiceKeywords(emailSubject);
-    const hasReceiptInBody = DocTypeDetector.hasReceiptKeywords(emailBody);
-    const hasInvoiceInBody = DocTypeDetector.hasInvoiceKeywords(emailBody);
+    const hasReceiptInBody = DocTypeDetector.hasReceiptKeywords(emailPlainBody);
+    const hasInvoiceInBody = DocTypeDetector.hasInvoiceKeywords(emailPlainBody);
 
     // Extract data via OCR
     const context = {
@@ -435,6 +450,14 @@ class InvoiceProcessor {
     };
 
     const extracted = this.ocrService.extract(pdfBlob, context);
+
+    // Validate: Skip if billing month is empty (couldn't extract date from content)
+    if (!extracted.eventMonth || extracted.eventMonth.trim() === '') {
+      AppLogger.info(`Skipping message ${messageId}: No billing month could be extracted`);
+      // Mark as processed to avoid re-processing
+      this.gmailSearcher.markAsProcessed(message);
+      return;
+    }
 
     // Combine all docType detection flags
     const detectionFlags: DocTypeDetectionFlags = {

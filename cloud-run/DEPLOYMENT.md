@@ -23,7 +23,18 @@ Apps Script (OAuth) --> IAMCredentials.generateIdToken --> Cloud Run (ID token)
 - Google Cloud project with billing enabled
 - `gcloud` CLI installed and authenticated
 - Cloud Build, Cloud Run, and IAM APIs enabled
+- **Drive API enabled in GCP project** (required for DriveApp to work)
 - User running Apps Script must be in the same Google Cloud organization
+
+### Enable Required APIs
+
+```bash
+# Enable required APIs (run once)
+gcloud services enable drive.googleapis.com --project=gen-lang-client-0915248534
+gcloud services enable iamcredentials.googleapis.com --project=gen-lang-client-0915248534
+gcloud services enable run.googleapis.com --project=gen-lang-client-0915248534
+gcloud services enable cloudbuild.googleapis.com --project=gen-lang-client-0915248534
+```
 
 ## Deployment Steps
 
@@ -168,6 +179,20 @@ If `ScriptApp.getOAuthToken()` returns insufficient scope:
 1. Remove the Apps Script project authorization
 2. Re-run to trigger new OAuth consent
 3. Accept the new permissions
+
+### Google Drive "Server Error"
+
+If DriveApp operations fail with "We're sorry, a server error occurred":
+1. **Enable Drive API in GCP Console** - This is the most common cause
+   - Visit: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=YOUR_PROJECT_NUMBER
+   - Click "Enable"
+2. Wait a few minutes for propagation
+3. Re-run the Apps Script function
+
+```bash
+# Or enable via CLI
+gcloud services enable drive.googleapis.com --project=gen-lang-client-0915248534
+```
 
 ## Updating the Service
 
