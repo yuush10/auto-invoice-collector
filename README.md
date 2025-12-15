@@ -6,11 +6,11 @@ Automatically collect invoices and receipts from Gmail and organize them in Goog
 
 This system automatically:
 - Searches Gmail for invoice/receipt emails
-- Extracts PDF attachments
+- Extracts PDF attachments or **converts email body to PDF** (via Cloud Run)
 - Uses Gemini API for OCR to extract service name and billing month
 - **Detects document type** (請求書/invoice or 領収書/receipt) with priority-based keyword matching
 - Organizes files in Google Drive by year-month (YYYY-MM format)
-- Names files as `YYYY-MM-{請求書|領収書}-ServiceName.pdf`
+- Names files as `YYYY-MM-ServiceName-{請求書|領収書}.pdf`
 - Logs all processing in Google Sheets with duplicate detection
 
 ## Technology Stack
@@ -51,9 +51,14 @@ auto-invoice-collector/
 │   │   ├── gmail/              # Gmail search & attachment extraction
 │   │   ├── drive/              # Google Drive operations
 │   │   ├── ocr/                # Gemini API integration
+│   │   ├── cloudrun/           # Cloud Run client (Phase 2)
 │   │   └── naming/             # File naming logic
 │   ├── types/                  # TypeScript type definitions
 │   └── utils/                  # Utilities (logger, date, docTypeDetector)
+├── cloud-run/                  # Email-to-PDF service (Phase 2)
+│   ├── src/                    # Express + Puppeteer service
+│   ├── Dockerfile              # Container definition
+│   └── cloudbuild.yaml         # Cloud Build configuration
 ├── test/                       # Jest tests
 ├── dist/                       # Build output
 └── docs/                       # Documentation
@@ -112,18 +117,20 @@ Before deploying, you need to set up Script Properties:
    - `ROOT_FOLDER_ID`: Google Drive folder ID for storing invoices
    - `LOG_SHEET_ID`: Google Sheets ID for logging
    - `ADMIN_EMAIL`: Email for error notifications
-   - `CLOUD_RUN_URL` (Phase 2 only): Cloud Run service URL for email-to-pdf
+   - `CLOUD_RUN_URL`: Cloud Run service URL for email-to-pdf
+   - `INVOKER_SERVICE_ACCOUNT`: Service account for Cloud Run invocation
 
 Alternatively, run the setup functions in the Apps Script editor.
 
-### Phase 2 Configuration
+### Phase 2 Configuration (Email Body to PDF)
 
 For email body to PDF conversion:
 
 1. Deploy Cloud Run service (see [cloud-run/README.md](cloud-run/README.md))
-2. Get the service URL: `gcloud run services describe email-to-pdf --region=asia-northeast1 --format="value(status.url)"`
-3. Add `CLOUD_RUN_URL` to Script Properties
-4. Grant IAM permissions for GAS to invoke the service
+2. Follow [cloud-run/DEPLOYMENT.md](cloud-run/DEPLOYMENT.md) for:
+   - Cloud Run deployment
+   - IAM service account setup
+   - Script Properties configuration
 
 ## First Deployment
 
@@ -232,10 +239,14 @@ The following scopes are required (configured in `appsscript.json`):
 
 ## Cost Estimation
 
-**MVP (Phase 1)**: ~¥2/month
+**Phase 1 (Attachments)**: ~¥2/month
 - Google Apps Script: Free
 - Gmail/Drive API: Free
 - Gemini API (gemini-1.5-flash): ~¥2/month for 50 invoices
+
+**Phase 2 (Email Body to PDF)**: ~¥5-10/month additional
+- Cloud Run: ~¥5/month (with min-instances=1)
+- Includes Puppeteer PDF rendering
 
 ## Deployment
 
@@ -281,18 +292,18 @@ Core functionality implemented and tested:
 
 **In production use**
 
-### Phase 2 - 🚧 In Development
+### Phase 2 - ✅ Complete (Production)
 
 Email body to PDF conversion (Issue #29):
-- ✅ Cloud Run service architecture
-- ✅ Puppeteer PDF renderer
+- ✅ Cloud Run service with Puppeteer PDF renderer
 - ✅ Express API endpoints (/convert, /health)
-- ✅ IAM authentication
-- ✅ GAS CloudRunClient integration
+- ✅ IAM authentication via `generateIdToken`
+- ✅ GAS CloudRunClient integration with retry logic
 - ✅ EmailBodyExtractor module
-- ✅ Main orchestration updates
-- ⏳ Cloud Run deployment (pending)
-- ⏳ End-to-end testing (pending)
+- ✅ Pre-validation: Skip non-invoice emails
+- ✅ Empty billing month detection
+
+**Supported services**: Canva, Mailchimp, and other email-body-only invoices
 
 ### Future Phases
 
@@ -303,6 +314,8 @@ Email body to PDF conversion (Issue #29):
 
 - [SPECIFICATION.md](SPECIFICATION.md) - Full technical specification
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Complete deployment guide
+- [cloud-run/DEPLOYMENT.md](cloud-run/DEPLOYMENT.md) - Cloud Run deployment (Phase 2)
+- [cloud-run/README.md](cloud-run/README.md) - Email-to-PDF service documentation
 - [CLAUDE.md](CLAUDE.md) - AI assistant guidelines for this project
 - [docs/E2E_TESTING_CHECKLIST.md](docs/E2E_TESTING_CHECKLIST.md) - E2E testing checklist
 

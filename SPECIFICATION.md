@@ -17,20 +17,20 @@ The system automatically distinguishes between invoices (請求書) and receipts
 ### Standard Format
 
 ```
-YYYY-MM-{docType}-{ServiceName}.pdf
+YYYY-MM-{ServiceName}-{docType}.pdf
 ```
 
 Where:
 - `YYYY-MM`: Event month (e.g., `2025-09`)
-- `{docType}`: Either `請求書` (invoice) or `領収書` (receipt)
 - `{ServiceName}`: Normalized service name (e.g., `Studio`, `IVRy`)
+- `{docType}`: Either `請求書` (invoice) or `領収書` (receipt)
 
 ### Examples
 
 ```
-2025-09-請求書-Studio.pdf
-2025-11-領収書-AWS.pdf
-2024-12-請求書-Google_Workspace.pdf
+2025-09-Studio-請求書.pdf
+2025-11-AWS-領収書.pdf
+2024-12-Google_Workspace-請求書.pdf
 ```
 
 ---
@@ -299,8 +299,8 @@ Gmail Message
     → Default to 領収書 if none found
     ↓
 [6] Generate Filename
-    → Combine: eventMonth + docType + serviceName
-    → Format: YYYY-MM-{docType}-{ServiceName}.pdf
+    → Combine: eventMonth + serviceName + docType
+    → Format: YYYY-MM-{ServiceName}-{docType}.pdf
     ↓
 [7] Upload to Drive
     → Save with generated filename
@@ -362,7 +362,7 @@ Gmail Message
 - Filename: `invoice_sep_2025.pdf`
 - Content: "INVOICE" header, "Amount Due: $XXX"
 
-**Result**: `2025-09-請求書-AWS.pdf`
+**Result**: `2025-09-AWS-請求書.pdf`
 
 **Detection**: Invoice keywords found in subject, body, filename, and content
 
@@ -374,7 +374,7 @@ Gmail Message
 - Filename: `receipt_202509.pdf`
 - Content: "Receipt" header, "Payment Received"
 
-**Result**: `2025-09-領収書-Studio.pdf`
+**Result**: `2025-09-Studio-領収書.pdf`
 
 **Detection**: Receipt keywords found in subject, body, and filename
 
@@ -386,7 +386,7 @@ Gmail Message
 - Filename: `請求書_202509.pdf`
 - Content: "請求書" at top of document
 
-**Result**: `2025-09-請求書-{ServiceName}.pdf`
+**Result**: `2025-09-{ServiceName}-請求書.pdf`
 
 **Detection**: 請求書 keywords found in all sources
 
@@ -428,12 +428,12 @@ Invalid filename characters are replaced:
 ## Testing Scenarios
 
 ### Test Case 1: Receipt by Subject
-- **Input**: 
+- **Input**:
   - Subject: "Receipt for September"
   - Body: "Payment confirmation"
   - Filename: `statement.pdf`
   - Content: "Amount paid"
-- **Expected**: `2025-09-領収書-{ServiceName}.pdf`
+- **Expected**: `2025-09-{ServiceName}-領収書.pdf`
 
 ### Test Case 2: Invoice by Email Body
 - **Input**:
@@ -441,7 +441,7 @@ Invalid filename characters are replaced:
   - Body: "Your invoice for this month..."
   - Filename: `document.pdf`
   - Content: "Billing details"
-- **Expected**: `2025-09-請求書-{ServiceName}.pdf`
+- **Expected**: `2025-09-{ServiceName}-請求書.pdf`
 
 ### Test Case 3: Receipt by PDF Content Only
 - **Input**:
@@ -449,21 +449,21 @@ Invalid filename characters are replaced:
   - Body: "See attached"
   - Filename: `payment.pdf`
   - Content: "領収書 No. 12345"
-- **Expected**: `2025-09-領収書-{ServiceName}.pdf`
+- **Expected**: `2025-09-{ServiceName}-領収書.pdf`
 
 ### Test Case 4: Default Behavior
-- **Input**: 
+- **Input**:
   - Subject: "Monthly statement"
   - Body: "Statement attached"
   - Filename: `statement_09.pdf`
   - Content: "Summary of charges"
-- **Expected**: `2025-09-領収書-{ServiceName}.pdf` (default)
+- **Expected**: `2025-09-{ServiceName}-領収書.pdf` (default)
 
 ### Test Case 5: Studio Mapping with Invoice
-- **Input**: 
+- **Input**:
   - Subject: "Invoice from Stripe"
   - OCR extracts "Personal 月額" as service name
-- **Expected**: `2025-09-請求書-Studio.pdf`
+- **Expected**: `2025-09-Studio-請求書.pdf`
 
 ---
 
@@ -508,7 +508,7 @@ const emailContext = {
 Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
 ──────────────   ──────────────     ──────────────      ──────────────
 雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード
-✅ COMPLETED     ✅ COMPLETED       📋 TODO             📋 TODO
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        📋 TODO
 
 ├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン
 ├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager
@@ -551,28 +551,35 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
 - ✅ Cleanup utilities for debugging (PR #27)
 - ✅ Comprehensive documentation (PR #27)
 
-**Phase 1完了条件**: ✅ 添付PDFが`YYYY-MM-{請求書|領収書}-(SERVICE NAME).pdf`で自動格納される
+**Phase 1完了条件**: ✅ 添付PDFが`YYYY-MM-(SERVICE NAME)-{請求書|領収書}.pdf`で自動格納される
 
 **Completion Date**: December 2025
 
 ---
 
-### Phase 2: メール本文 → Print to PDF（12h）- 📋 TODO
+### Phase 2: メール本文 → Print to PDF（12h）- ✅ COMPLETED
 
-**Status**: Not started
+**Status**: Production-ready with email body to PDF conversion
 
 | タスク | 工数 | 状態 | 成果物 |
 |---|---|---|---|
-| Cloud Run環境構築（Node.js + Puppeteer） | 4h | 📋 | Dockerfile |
-| email-to-pdf エンドポイント実装 | 4h | 📋 | renderer/index.ts |
-| GASからIAM認証付き呼び出し | 4h | 📋 | CloudRunClient.ts |
+| Cloud Run環境構築（Node.js + Puppeteer） | 4h | ✅ | Dockerfile, cloudbuild.yaml |
+| email-to-pdf エンドポイント実装 | 4h | ✅ | cloud-run/src/ |
+| GASからIAM認証付き呼び出し | 4h | ✅ | CloudRunClient.ts |
 
-**Use Cases**:
-- AWS invoices (currently showing "No PDF attachments")
+**Additional Features**:
+- ✅ IAM authentication via `generateIdToken` (Issue #40)
+- ✅ Retry logic with exponential backoff
+- ✅ Pre-validation: Skip emails without invoice/receipt keywords
+- ✅ Empty billing month detection and skip
+- ✅ Drive API requirement documented in DEPLOYMENT.md
+
+**Use Cases Supported**:
+- Canva invoices (email body only)
+- Mailchimp invoices (email body only)
 - Services that send invoice data in email body without attachments
-- HTML email invoices
 
-**Priority**: Medium (current Phase 1 handles most services adequately)
+**Completion Date**: December 2025
 
 ---
 
@@ -598,33 +605,30 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
 ## Production Status
 
 ### ✅ Currently Working
-- Gmail attachment-based invoice collection (8 services)
+- Gmail attachment-based invoice collection (8+ services)
+- **Email body to PDF conversion** via Cloud Run (Phase 2)
 - Automatic document type detection (請求書/領収書)
 - Monthly folder organization in Google Drive
 - Duplicate prevention via ProcessingLog
 - Daily automated processing at 6 AM
 - Email notifications for errors
+- Pre-validation to skip non-invoice emails
 
 ### 📋 Known Limitations
-1. **AWS Invoices**: "No PDF attachments found" - may need Phase 2 (email body to PDF)
-2. **Services without attachments**: Currently skipped - requires Phase 2
-3. **Portal-only invoices**: Requires manual download - would need Phase 3
+1. **Portal-only invoices**: Requires manual download - would need Phase 3
+2. **Services requiring login**: Not yet automated
 
 ### 🔄 Monitoring & Maintenance
 - ✅ Execution logs via `clasp logs`
 - ✅ ProcessingLog spreadsheet tracking
 - ✅ Error notifications to admin email
+- ✅ Cloud Run health endpoint (/health)
 - 📋 TODO: Monthly summary dashboard
 - 📋 TODO: Service health monitoring
 
 ---
 
 ## Future Enhancements
-
-### Phase 2 Preparation (Email Body to PDF)
-- Research Cloud Run deployment costs
-- Identify services requiring email body conversion
-- Design PDF rendering template
 
 ### Phase 3 Preparation (URL Download)
 - Survey vendor login requirements
