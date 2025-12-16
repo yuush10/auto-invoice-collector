@@ -515,6 +515,26 @@ export class WebAppApi {
   }
 
   /**
+   * Delete a prompt (only inactive prompts can be deleted)
+   */
+  deletePrompt(promptId: string): void {
+    try {
+      const prompt = this.promptService.getById(promptId);
+      if (!prompt) {
+        throw new Error('Prompt not found');
+      }
+      if (prompt.isActive) {
+        throw new Error('Cannot delete active prompt. Deactivate it first.');
+      }
+      this.promptService.delete(promptId);
+      AppLogger.info(`Deleted prompt: ${promptId}`);
+    } catch (error) {
+      AppLogger.error('Error deleting prompt', error as Error);
+      throw error;
+    }
+  }
+
+  /**
    * Test a prompt with sample data
    */
   testPrompt(promptId: string, testFileId: string): PromptTestResult {

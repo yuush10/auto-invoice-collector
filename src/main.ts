@@ -872,6 +872,15 @@ function api_deactivatePrompt(promptId: string): string {
   }
 }
 
+function api_deletePrompt(promptId: string): string {
+  try {
+    getWebAppApi().deletePrompt(promptId);
+    return JSON.stringify({ success: true });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
 function api_testPrompt(promptId: string, testFileId: string): string {
   try {
     const result = getWebAppApi().testPrompt(promptId, testFileId);
@@ -941,8 +950,9 @@ function createTestDraftData(): void {
     notes: string;
   }> = [
     // 1. Slack - Pending (高信頼度)
+    // Using a real PDF file for preview testing
     {
-      fileId: 'test-file-001',
+      fileId: '1bpZMdfuuNl9Z8A7PIr3I2XinDJ2gQyv4',
       fileName: 'Slack_2024-12_invoice.pdf',
       filePath: '/Invoices/2024-12/Slack_2024-12_invoice.pdf',
       docType: 'invoice',
@@ -1379,6 +1389,7 @@ function clearTestDraftData(): void {
 (globalThis as any).api_updatePrompt = api_updatePrompt;
 (globalThis as any).api_activatePrompt = api_activatePrompt;
 (globalThis as any).api_deactivatePrompt = api_deactivatePrompt;
+(globalThis as any).api_deletePrompt = api_deletePrompt;
 (globalThis as any).api_testPrompt = api_testPrompt;
 (globalThis as any).api_getPromptVersionHistory = api_getPromptVersionHistory;
 (globalThis as any).api_resetToDefaultPrompt = api_resetToDefaultPrompt;

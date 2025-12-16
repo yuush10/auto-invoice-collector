@@ -134,6 +134,10 @@ function api_deactivatePrompt(promptId) {
   return globalThis.api_deactivatePrompt(promptId);
 }
 
+function api_deletePrompt(promptId) {
+  return globalThis.api_deletePrompt(promptId);
+}
+
 function api_testPrompt(promptId, testFileId) {
   return globalThis.api_testPrompt(promptId, testFileId);
 }
