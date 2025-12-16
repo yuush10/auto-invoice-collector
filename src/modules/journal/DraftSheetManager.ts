@@ -162,7 +162,9 @@ export class DraftSheetManager {
       const drafts: DraftEntry[] = [];
 
       for (let i = 1; i < data.length; i++) {
-        if (data[i][12] === eventMonth) {
+        // Convert the cell value to YYYY-MM format before comparison
+        const cellEventMonth = this.toYearMonth(data[i][12]);
+        if (cellEventMonth === eventMonth) {
           drafts.push(this.rowToDraft(data[i]));
         }
       }
@@ -414,10 +416,10 @@ export class DraftSheetManager {
       serviceName: row[7] as string,
       amount: Number(row[8]),
       taxAmount: Number(row[9]),
-      issueDate: row[10] as string,
-      dueDate: row[11] as string,
-      eventMonth: row[12] as string,
-      paymentMonth: row[13] as string,
+      issueDate: this.toDateString(row[10]),
+      dueDate: this.toDateString(row[11]),
+      eventMonth: this.toYearMonth(row[12]),
+      paymentMonth: this.toYearMonth(row[13]),
       suggestedEntries: row[14]
         ? (JSON.parse(row[14] as string) as SuggestedEntries)
         : null,
@@ -433,5 +435,65 @@ export class DraftSheetManager {
       createdAt: new Date(row[22] as string),
       updatedAt: new Date(row[23] as string)
     };
+  }
+
+  /**
+   * Convert value to YYYY-MM format string
+   * Handles both Date objects and strings
+   */
+  private toYearMonth(value: unknown): string {
+    if (!value) return '';
+
+    // If it's already a string in YYYY-MM format
+    if (typeof value === 'string') {
+      if (value.match(/^\d{4}-\d{2}$/)) {
+        return value;
+      }
+      // Try to parse as date string
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}`;
+      }
+      return value;
+    }
+
+    // If it's a Date object
+    if (value instanceof Date) {
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      return `${year}-${month}`;
+    }
+
+    return String(value);
+  }
+
+  /**
+   * Convert value to YYYY-MM-DD format string
+   * Handles both Date objects and strings
+   */
+  private toDateString(value: unknown): string {
+    if (!value) return '';
+
+    // If it's already a string in YYYY-MM-DD format
+    if (typeof value === 'string') {
+      if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return value;
+      }
+      // Try to parse as date string
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+      return value;
+    }
+
+    // If it's a Date object
+    if (value instanceof Date) {
+      return value.toISOString().split('T')[0];
+    }
+
+    return String(value);
   }
 }

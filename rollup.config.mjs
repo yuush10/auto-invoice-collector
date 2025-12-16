@@ -145,6 +145,19 @@ function api_getPromptVersionHistory(promptType) {
 function api_resetToDefaultPrompt(promptType) {
   return globalThis.api_resetToDefaultPrompt(promptType);
 }
+
+// Test data functions (development only)
+function createTestDraftData() {
+  return globalThis.createTestDraftData();
+}
+
+function clearTestDraftData() {
+  return globalThis.clearTestDraftData();
+}
+
+function debugDraftData() {
+  return globalThis.debugDraftData();
+}
 `
   },
   plugins: [

@@ -141,6 +141,10 @@ export class WebAppApi {
 
       for (const draft of allDrafts) {
         const month = draft.eventMonth;
+        // Skip invalid eventMonth values
+        if (!month || typeof month !== 'string' || !month.includes('-')) {
+          continue;
+        }
         monthMap.set(month, (monthMap.get(month) || 0) + 1);
       }
 
@@ -643,6 +647,9 @@ export class WebAppApi {
    * Format year-month for display
    */
   private formatYearMonth(yearMonth: string): string {
+    if (!yearMonth || typeof yearMonth !== 'string' || !yearMonth.includes('-')) {
+      return yearMonth || '不明';
+    }
     const [year, month] = yearMonth.split('-');
     return `${year}年${parseInt(month)}月`;
   }

@@ -901,6 +901,451 @@ function api_resetToDefaultPrompt(promptType: string): string {
   }
 }
 
+// ============================================
+// Test Data Generation (Development Only)
+// ============================================
+
+import { DraftSheetManager } from './modules/journal/DraftSheetManager';
+import { SuggestedEntries } from './types/journal';
+
+/**
+ * Create test draft data for development/testing purposes
+ * Run this function from Apps Script editor to populate DraftSheet
+ */
+function createTestDraftData(): void {
+  AppLogger.info('Creating test draft data...');
+
+  const draftManager = new DraftSheetManager(Config.getLogSheetId());
+
+  // Test data: Various SaaS invoices for December 2024
+  const testDrafts: Array<{
+    fileId: string;
+    fileName: string;
+    filePath: string;
+    docType: 'invoice' | 'receipt';
+    storageType: 'electronic' | 'paper_scan';
+    vendorName: string;
+    serviceName: string;
+    amount: number;
+    taxAmount: number;
+    issueDate: string;
+    dueDate: string;
+    eventMonth: string;
+    paymentMonth: string;
+    suggestedEntries: SuggestedEntries | null;
+    selectedEntry: JournalEntry[] | null;
+    dictionaryMatchId: string;
+    status: DraftStatus;
+    reviewedBy: string;
+    reviewedAt: Date | null;
+    notes: string;
+  }> = [
+    // 1. Slack - Pending (高信頼度)
+    {
+      fileId: 'test-file-001',
+      fileName: 'Slack_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/Slack_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Slack Technologies, LLC',
+      serviceName: 'Slack Pro',
+      amount: 1100,
+      taxAmount: 100,
+      issueDate: '2024-12-01',
+      dueDate: '2024-12-31',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 1000,
+                taxAmount: 100
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 1100
+              },
+              description: 'Slack Pro利用料 2024年12月分'
+            }],
+            confidence: 0.95,
+            reasoning: 'SaaSコミュニケーションツールの月額利用料のため通信費として計上'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '支払手数料',
+                taxClass: '課税仕入10%',
+                amount: 1000,
+                taxAmount: 100
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 1100
+              },
+              description: 'Slack Pro利用料 2024年12月分'
+            }],
+            confidence: 0.75,
+            reasoning: 'クラウドサービス利用料として支払手数料で計上する方法'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: ''
+    },
+
+    // 2. AWS - Pending (中信頼度、複数候補)
+    {
+      fileId: 'test-file-002',
+      fileName: 'AWS_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/AWS_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Amazon Web Services, Inc.',
+      serviceName: 'AWS',
+      amount: 55000,
+      taxAmount: 5000,
+      issueDate: '2024-12-03',
+      dueDate: '2025-01-03',
+      eventMonth: '2024-12',
+      paymentMonth: '2025-01',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-03',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'クラウドインフラ',
+                taxClass: '課税仕入10%',
+                amount: 50000,
+                taxAmount: 5000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 55000
+              },
+              description: 'AWS利用料 2024年12月分'
+            }],
+            confidence: 0.82,
+            reasoning: 'クラウドインフラ利用料のため通信費として計上'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-03',
+              debit: {
+                accountName: '賃借料',
+                taxClass: '課税仕入10%',
+                amount: 50000,
+                taxAmount: 5000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 55000
+              },
+              description: 'AWS利用料 2024年12月分'
+            }],
+            confidence: 0.65,
+            reasoning: 'サーバー利用料として賃借料で計上する方法'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '利用量に応じた従量課金のため金額が変動'
+    },
+
+    // 3. Google Workspace - Reviewed (選択済み)
+    {
+      fileId: 'test-file-003',
+      fileName: 'GoogleWorkspace_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/GoogleWorkspace_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Google LLC',
+      serviceName: 'Google Workspace Business Standard',
+      amount: 16500,
+      taxAmount: 1500,
+      issueDate: '2024-12-05',
+      dueDate: '2024-12-20',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-05',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 15000,
+                taxAmount: 1500
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 16500
+              },
+              description: 'Google Workspace Business Standard 2024年12月分 (10名)'
+            }],
+            confidence: 0.92,
+            reasoning: 'グループウェアサービスの月額利用料のため通信費として計上'
+          }
+        ]
+      },
+      selectedEntry: [{
+        entryNo: 1,
+        transactionDate: '2024-12-05',
+        debit: {
+          accountName: '通信費',
+          subAccountName: 'SaaS',
+          taxClass: '課税仕入10%',
+          amount: 15000,
+          taxAmount: 1500
+        },
+        credit: {
+          accountName: '未払金',
+          amount: 16500
+        },
+        description: 'Google Workspace Business Standard 2024年12月分 (10名)'
+      }],
+      dictionaryMatchId: '',
+      status: 'reviewed',
+      reviewedBy: 'test@example.com',
+      reviewedAt: new Date('2024-12-10T10:00:00'),
+      notes: '毎月定額'
+    },
+
+    // 4. Notion - Approved (承認済み)
+    {
+      fileId: 'test-file-004',
+      fileName: 'Notion_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/Notion_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Notion Labs, Inc.',
+      serviceName: 'Notion Plus',
+      amount: 2200,
+      taxAmount: 200,
+      issueDate: '2024-12-01',
+      dueDate: '2024-12-15',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 2000,
+                taxAmount: 200
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 2200
+              },
+              description: 'Notion Plus 2024年12月分'
+            }],
+            confidence: 0.94,
+            reasoning: 'ナレッジ管理SaaSの月額利用料'
+          }
+        ]
+      },
+      selectedEntry: [{
+        entryNo: 1,
+        transactionDate: '2024-12-01',
+        debit: {
+          accountName: '通信費',
+          subAccountName: 'SaaS',
+          taxClass: '課税仕入10%',
+          amount: 2000,
+          taxAmount: 200
+        },
+        credit: {
+          accountName: '未払金',
+          amount: 2200
+        },
+        description: 'Notion Plus 2024年12月分'
+      }],
+      dictionaryMatchId: 'dict-notion-001',
+      status: 'approved',
+      reviewedBy: 'test@example.com',
+      reviewedAt: new Date('2024-12-10T11:00:00'),
+      notes: ''
+    },
+
+    // 5. GitHub - Pending (低信頼度)
+    {
+      fileId: 'test-file-005',
+      fileName: 'GitHub_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/GitHub_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'GitHub, Inc.',
+      serviceName: 'GitHub Enterprise',
+      amount: 44000,
+      taxAmount: 4000,
+      issueDate: '2024-12-02',
+      dueDate: '2025-01-02',
+      eventMonth: '2024-12',
+      paymentMonth: '2025-01',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-02',
+              debit: {
+                accountName: '支払手数料',
+                taxClass: '課税仕入10%',
+                amount: 40000,
+                taxAmount: 4000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 44000
+              },
+              description: 'GitHub Enterprise 2024年12月分'
+            }],
+            confidence: 0.58,
+            reasoning: '開発ツールのため支払手数料として計上（要確認）'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-02',
+              debit: {
+                accountName: '通信費',
+                taxClass: '課税仕入10%',
+                amount: 40000,
+                taxAmount: 4000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 44000
+              },
+              description: 'GitHub Enterprise 2024年12月分'
+            }],
+            confidence: 0.55,
+            reasoning: 'クラウドサービスとして通信費計上も可'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '勘定科目の判断が必要'
+    },
+
+    // 6. Freee - Pending (紙スキャン)
+    {
+      fileId: 'test-file-006',
+      fileName: 'Freee_2024-12_receipt.pdf',
+      filePath: '/Invoices/2024-12/Freee_2024-12_receipt.pdf',
+      docType: 'receipt',
+      storageType: 'paper_scan',
+      vendorName: 'freee株式会社',
+      serviceName: 'freee会計',
+      amount: 3278,
+      taxAmount: 298,
+      issueDate: '2024-12-01',
+      dueDate: '',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '支払手数料',
+                subAccountName: '会計ソフト',
+                taxClass: '課税仕入10%',
+                amount: 2980,
+                taxAmount: 298
+              },
+              credit: {
+                accountName: '普通預金',
+                amount: 3278
+              },
+              description: 'freee会計 スタンダードプラン 2024年12月分'
+            }],
+            confidence: 0.88,
+            reasoning: '会計ソフト利用料のため支払手数料として計上'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '紙領収書からスキャン'
+    }
+  ];
+
+  // Create drafts
+  let created = 0;
+  for (const draft of testDrafts) {
+    try {
+      draftManager.create(draft, 'test-data-generator');
+      created++;
+      AppLogger.info(`Created test draft: ${draft.vendorName} - ${draft.serviceName}`);
+    } catch (error) {
+      AppLogger.error(`Failed to create test draft for ${draft.vendorName}`, error as Error);
+    }
+  }
+
+  AppLogger.info(`Test data creation complete: ${created}/${testDrafts.length} drafts created`);
+  Logger.log(`Test data creation complete: ${created}/${testDrafts.length} drafts created`);
+}
+
+/**
+ * Clear all test data from DraftSheet (for cleanup)
+ */
+function clearTestDraftData(): void {
+  const spreadsheet = SpreadsheetApp.openById(Config.getLogSheetId());
+  const sheet = spreadsheet.getSheetByName('DraftSheet');
+
+  if (!sheet) {
+    Logger.log('DraftSheet not found');
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+    Logger.log(`Deleted ${lastRow - 1} rows from DraftSheet`);
+  } else {
+    Logger.log('DraftSheet is already empty');
+  }
+}
+
 // Export functions to GAS global scope
 // In Google Apps Script, 'this' at the top level refers to the global scope
 (globalThis as any).main = main;
@@ -937,3 +1382,60 @@ function api_resetToDefaultPrompt(promptType: string): string {
 (globalThis as any).api_testPrompt = api_testPrompt;
 (globalThis as any).api_getPromptVersionHistory = api_getPromptVersionHistory;
 (globalThis as any).api_resetToDefaultPrompt = api_resetToDefaultPrompt;
+
+// Test data functions
+(globalThis as any).createTestDraftData = createTestDraftData;
+(globalThis as any).clearTestDraftData = clearTestDraftData;
+
+// Debug function to diagnose data issues
+function debugDraftData(): void {
+  const spreadsheetId = Config.getLogSheetId();
+  Logger.log('=== DEBUG DRAFT DATA ===');
+  Logger.log(`SpreadsheetId: ${spreadsheetId}`);
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  Logger.log(`Spreadsheet name: ${spreadsheet.getName()}`);
+
+  // List all sheets
+  const sheets = spreadsheet.getSheets();
+  Logger.log(`Total sheets: ${sheets.length}`);
+  for (const s of sheets) {
+    Logger.log(`  - Sheet: "${s.getName()}" (rows: ${s.getLastRow()})`);
+  }
+
+  // Check DraftSheet specifically
+  const draftSheet = spreadsheet.getSheetByName('DraftSheet');
+  if (!draftSheet) {
+    Logger.log('ERROR: DraftSheet not found!');
+    return;
+  }
+
+  const lastRow = draftSheet.getLastRow();
+  Logger.log(`DraftSheet last row: ${lastRow}`);
+
+  if (lastRow > 1) {
+    // Get first data row
+    const headers = draftSheet.getRange(1, 1, 1, 18).getValues()[0];
+    const firstRow = draftSheet.getRange(2, 1, 1, 18).getValues()[0];
+    Logger.log(`Headers: ${JSON.stringify(headers)}`);
+    Logger.log(`First data row: ${JSON.stringify(firstRow)}`);
+
+    // Find event_month column
+    const eventMonthIdx = headers.indexOf('event_month');
+    Logger.log(`event_month column index: ${eventMonthIdx}`);
+    if (eventMonthIdx >= 0) {
+      const eventMonthValue = firstRow[eventMonthIdx];
+      Logger.log(`First event_month value: "${eventMonthValue}" (type: ${typeof eventMonthValue})`);
+    }
+  }
+
+  // Test WebAppApi directly
+  Logger.log('--- Testing WebAppApi ---');
+  const api = new WebAppApi({
+    spreadsheetId: spreadsheetId,
+    geminiApiKey: Config.getGeminiApiKey()
+  });
+  const options = api.getYearMonthOptions();
+  Logger.log(`YearMonthOptions: ${JSON.stringify(options)}`);
+}
+(globalThis as any).debugDraftData = debugDraftData;
