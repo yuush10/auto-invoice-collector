@@ -5,6 +5,92 @@
 import { DocumentType } from './index';
 
 /**
+ * A value with confidence score for OCR extraction
+ */
+export interface ConfidenceValue<T> {
+  value: T;
+  confidence: number;
+}
+
+/**
+ * Tax rate breakdown by percentage
+ */
+export interface TaxRateBreakdown {
+  '8%'?: number;
+  '10%'?: number;
+}
+
+/**
+ * Extracted journal information from invoice/receipt (適格請求書要件)
+ * All fields include confidence scores for user review
+ */
+export interface ExtractedJournalInfo {
+  // Document type
+  docType: ConfidenceValue<DocumentType>;
+
+  // ①-1 適格請求書発行事業者の氏名又は名称
+  issuerName: ConfidenceValue<string>;
+
+  // ①-2 適格請求書発行事業者の登録番号 (T + 13 digits)
+  invoiceRegistrationNumber: ConfidenceValue<string | null>;
+
+  // ② 課税資産の譲渡等を行った年月日
+  transactionDate: ConfidenceValue<string>;
+
+  // ③ 課税資産の譲渡等に係る資産又は役務の内容
+  itemDescription: ConfidenceValue<string>;
+
+  // ③ 軽減対象課税資産の譲渡等である旨
+  isReducedTaxRate: ConfidenceValue<boolean>;
+
+  // ④-1 税率ごとに区分した税抜/税込価額の合計
+  amountByTaxRate: ConfidenceValue<TaxRateBreakdown>;
+
+  // ④-2 適用税率
+  applicableTaxRates: ConfidenceValue<string[]>;
+
+  // ⑤ 税率ごとに区分した消費税額等
+  taxAmountByRate: ConfidenceValue<TaxRateBreakdown>;
+
+  // ⑥ 書類の交付を受ける事業者の氏名又は名称
+  recipientName: ConfidenceValue<string | null>;
+
+  // ⑦ タイムスタンプ (電子帳簿保存法)
+  timestamp: ConfidenceValue<string>;
+
+  // Additional fields for journal generation
+  totalAmount: ConfidenceValue<number>;
+  totalTaxAmount: ConfidenceValue<number>;
+  serviceName: ConfidenceValue<string>;
+  eventMonth: ConfidenceValue<string>;
+  usagePeriod: ConfidenceValue<{ start: string; end: string } | null>;
+  dueDate: ConfidenceValue<string | null>;
+  paymentTerms: ConfidenceValue<string | null>;
+
+  // Raw OCR notes
+  notes: string;
+}
+
+/**
+ * Result of journal extraction from Gemini
+ */
+export interface JournalExtractionResult {
+  extractedInfo: ExtractedJournalInfo;
+  suggestions: JournalEntrySuggestion[];
+  rawResponse?: string;
+}
+
+/**
+ * Match result from dictionary lookup
+ */
+export interface DictionaryMatchResult {
+  matched: boolean;
+  dictEntry?: DictionaryEntry;
+  confidence: number;
+  matchType: 'exact' | 'alias' | 'fuzzy' | 'none';
+}
+
+/**
  * Storage type for documents
  */
 export type StorageType = 'electronic' | 'paper_scan';
