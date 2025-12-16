@@ -16,12 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - OCR/AI: Gemini API (gemini-1.5-flash)
 - Development: clasp CLI
 
-**Current Status:** MVP Phase 1 Complete
+**Current Status:** Phase 4.3 Complete (Journal Entry Review Web App)
 - Gmail search and PDF attachment extraction
 - Gemini OCR for service name and billing month extraction
 - Google Drive organization by year-month folders
 - Processing log with duplicate detection
 - Error notification system
+- Email body to PDF conversion via Cloud Run (Phase 2)
+- **Journal entry auto-generation** via Gemini AI (Phase 4)
+- **Review Web App** for journal confirmation and approval
+- **Audit trail** for 電子帳簿保存法 compliance
 
 This document provides guidelines for AI assistants working on this codebase, focusing on GAS-specific development practices and workflows.
 
@@ -280,11 +284,27 @@ auto-invoice-collector/
 │   │   ├── logging/
 │   │   │   └── ProcessingLogger.ts        # Google Sheets logging
 │   │   │
-│   │   └── notifications/
-│   │       └── Notifier.ts                # Email notifications
+│   │   ├── notifications/
+│   │   │   └── Notifier.ts                # Email notifications
+│   │   │
+│   │   └── journal/                       # Phase 4: Journal entry management
+│   │       ├── DraftSheetManager.ts       # Draft CRUD operations
+│   │       ├── DraftHistorySheetManager.ts # Change history tracking
+│   │       ├── DictionarySheetManager.ts  # Learning dictionary
+│   │       ├── JournalExtractor.ts        # Invoice data extraction
+│   │       ├── JournalSuggestionService.ts # Journal entry suggestions
+│   │       ├── JournalGenerator.ts        # Orchestration service
+│   │       └── PromptService.ts           # Prompt management
+│   │
+│   ├── webapp/                  # Phase 4.3: Review Web App
+│   │   ├── WebAppApi.ts         # Server-side API for frontend
+│   │   └── types.ts             # Web App type definitions
 │   │
 │   ├── types/
-│   │   └── index.ts             # TypeScript type definitions
+│   │   ├── index.ts             # TypeScript type definitions
+│   │   ├── journal.ts           # Journal entry types
+│   │   ├── history.ts           # History tracking types
+│   │   └── prompt.ts            # Prompt configuration types
 │   │
 │   └── utils/
 │       ├── logger.ts            # Logging utilities
@@ -296,7 +316,13 @@ auto-invoice-collector/
 │       └── main.integration.test.ts  # Integration tests
 │
 ├── dist/                        # Build output (generated)
-│   └── bundle.js                # Compiled & bundled JavaScript
+│   ├── bundle.js                # Compiled & bundled JavaScript
+│   ├── index.html               # Web App main page
+│   ├── dashboard.html           # Dashboard component
+│   ├── review.html              # Review/detail component
+│   ├── settings.html            # Settings component
+│   ├── app.js.html              # Vue.js application
+│   └── style.css.html           # Custom styles
 │
 ├── docs/                        # Documentation
 │   └── E2E_TESTING_CHECKLIST.md
@@ -308,9 +334,11 @@ auto-invoice-collector/
 ```
 
 **Key Files:**
-- `src/main.ts`: Contains `main()`, `runManually()`, and `setupTrigger()` functions
+- `src/main.ts`: Contains `main()`, `runManually()`, `setupTrigger()`, `doGet()` and API functions
 - `src/config.ts`: Service configurations (Gmail search queries, extraction types)
+- `src/webapp/WebAppApi.ts`: Server-side API for Review Web App
 - `dist/bundle.js`: Final output pushed to Google Apps Script
+- `dist/*.html`: Web App HTML files pushed to Google Apps Script
 - `appsscript.json`: OAuth scopes and GAS configuration
 
 ### Code Style for Apps Script
@@ -622,6 +650,9 @@ The goal is to create a reliable, maintainable invoice collection system that:
 - Organizes files in Google Drive by year-month
 - Maintains processing logs with duplicate detection
 - Sends error notifications when issues occur
+- **Generates journal entry suggestions via Gemini AI**
+- **Provides a Web App for reviewing and approving journal entries**
+- **Maintains audit trail for 電子帳簿保存法 compliance**
 
 Always:
 1. Check GitHub issues before starting work
