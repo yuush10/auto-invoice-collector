@@ -536,9 +536,13 @@ function runManually(): void {
  * Run this once to set up automatic execution
  */
 function setupTrigger(): void {
-  // Remove existing triggers
+  // Remove existing triggers for main function only
   const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'main') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 
   // Create new daily trigger at 6 AM
   ScriptApp.newTrigger('main')
@@ -550,8 +554,51 @@ function setupTrigger(): void {
   Logger.log('Daily trigger created successfully');
 }
 
+/**
+ * Setup function to create the monthly journal processing trigger
+ * Run this once to set up automatic monthly journal entry generation
+ * Runs on the 5th of each month at 9 AM JST
+ */
+function setupMonthlyJournalTrigger(): void {
+  // Remove existing triggers for processMonthlyJournals function only
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'processMonthlyJournals') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new monthly trigger on the 5th at 9 AM
+  ScriptApp.newTrigger('processMonthlyJournals')
+    .timeBased()
+    .onMonthDay(5)
+    .atHour(9)
+    .create();
+
+  Logger.log('Monthly journal trigger created successfully (5th of each month at 9 AM)');
+}
+
+/**
+ * Placeholder for monthly journal processing
+ * Will be implemented in Phase 4.2
+ */
+async function processMonthlyJournals(): Promise<void> {
+  AppLogger.info('Monthly journal processing started');
+
+  // TODO: Implement in Phase 4.2
+  // 1. Get files from previous month's folder
+  // 2. Process each file through Gemini OCR for journal extraction
+  // 3. Match against dictionary for patterns
+  // 4. Create draft entries in DraftSheet
+  // 5. Send notification with summary
+
+  AppLogger.info('Monthly journal processing completed (placeholder)');
+}
+
 // Export functions to GAS global scope
 // In Google Apps Script, 'this' at the top level refers to the global scope
 (globalThis as any).main = main;
 (globalThis as any).runManually = runManually;
 (globalThis as any).setupTrigger = setupTrigger;
+(globalThis as any).setupMonthlyJournalTrigger = setupMonthlyJournalTrigger;
+(globalThis as any).processMonthlyJournals = processMonthlyJournals;

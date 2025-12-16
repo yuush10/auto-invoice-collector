@@ -156,6 +156,82 @@ git fetch --prune                      # Clean up remote tracking branches
 - Use `--delete-branch` to auto-cleanup remote branch
 - Never use `git merge` locally and push to main
 
+### 2.1 Multi-Phase Development (Development Branches)
+
+For large features spanning multiple sub-issues (like Phase 4 with 5 sub-issues), use a **development branch** to isolate work from main until the entire phase is complete and tested.
+
+**Why Use Development Branches:**
+- **Easy rollback**: If the phase fails midway, main remains unaffected
+- **Integration testing**: Test all sub-features together before main merge
+- **Stable main**: Production code stays reliable
+- **Clear history**: Single merge commit for the entire phase
+
+**Branch Structure:**
+```
+main (stable, production-ready)
+  └── develop/phase-name (integration branch)
+        ├── feature/phase-name.1-description
+        ├── feature/phase-name.2-description
+        ├── feature/phase-name.3-description
+        └── ...
+```
+
+**Workflow:**
+
+```bash
+# 1. Create development branch from main (once per phase)
+git checkout main && git pull
+git checkout -b develop/phase4
+git push origin develop/phase4 -u
+
+# 2. For each sub-issue, branch from develop branch
+git checkout develop/phase4 && git pull
+git checkout -b feature/phase4.1-infrastructure
+
+# 3. Make changes and commit
+git add .
+git commit -m "feat(phase4.1): description
+
+Closes #33"
+
+# 4. Push and create PR targeting develop branch (NOT main)
+git push origin feature/phase4.1-infrastructure
+gh pr create --base develop/phase4 \
+  --title "[Phase 4.1] Feature Description" \
+  --body "..."
+
+# 5. After PR approval, merge to develop branch
+gh pr merge <PR-number> --squash --delete-branch
+
+# 6. Repeat steps 2-5 for each sub-issue
+
+# 7. After ALL sub-issues complete and tested, merge develop to main
+git checkout develop/phase4 && git pull
+gh pr create --base main --head develop/phase4 \
+  --title "Phase 4: Complete Feature Name" \
+  --body "Merges all Phase 4 sub-issues..."
+
+# 8. After final PR approval
+gh pr merge <PR-number> --squash
+
+# 9. Cleanup
+git checkout main && git pull
+git branch -d develop/phase4
+git push origin --delete develop/phase4
+```
+
+**When to Use:**
+- Phases with 3+ related sub-issues
+- Features that require integration testing across components
+- High-risk changes where rollback capability is important
+- Features with compliance requirements (e.g., 電子帳簿保存法)
+
+**When NOT to Use:**
+- Single-issue features
+- Small bug fixes
+- Documentation updates
+- Independent enhancements
+
 ### 3. Commit Message Format
 Use conventional commits:
 ```
