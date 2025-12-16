@@ -35,6 +35,116 @@ function cleanupFailedMessages() {
 function cleanupProcessedEmails(gmailQuery, serviceName) {
   return globalThis.cleanupProcessedEmails(gmailQuery, serviceName);
 }
+
+function setupMonthlyJournalTrigger() {
+  return globalThis.setupMonthlyJournalTrigger();
+}
+
+function processMonthlyJournals() {
+  return globalThis.processMonthlyJournals();
+}
+
+// Web App functions
+function doGet(e) {
+  return globalThis.doGet(e);
+}
+
+function include(filename) {
+  return globalThis.include(filename);
+}
+
+// API wrapper functions for google.script.run
+function api_getDraftSummary(yearMonth) {
+  return globalThis.api_getDraftSummary(yearMonth);
+}
+
+function api_getDraftList(yearMonth, status) {
+  return globalThis.api_getDraftList(yearMonth, status);
+}
+
+function api_getYearMonthOptions() {
+  return globalThis.api_getYearMonthOptions();
+}
+
+function api_bulkApprove(draftIdsJson) {
+  return globalThis.api_bulkApprove(draftIdsJson);
+}
+
+function api_getDraftDetail(draftId) {
+  return globalThis.api_getDraftDetail(draftId);
+}
+
+function api_getDraftHistory(draftId) {
+  return globalThis.api_getDraftHistory(draftId);
+}
+
+function api_getDraftSnapshot(draftId, version) {
+  return globalThis.api_getDraftSnapshot(draftId, version);
+}
+
+function api_updateDraft(draftId, updatesJson, reason) {
+  return globalThis.api_updateDraft(draftId, updatesJson, reason);
+}
+
+function api_selectSuggestion(draftId, suggestionIndex) {
+  return globalThis.api_selectSuggestion(draftId, suggestionIndex);
+}
+
+function api_setCustomEntry(draftId, entriesJson, reason) {
+  return globalThis.api_setCustomEntry(draftId, entriesJson, reason);
+}
+
+function api_approveDraft(draftId, selectedEntryJson, registerToDict, editReason) {
+  return globalThis.api_approveDraft(draftId, selectedEntryJson, registerToDict, editReason);
+}
+
+function api_getNextPendingDraft(currentDraftId, yearMonth) {
+  return globalThis.api_getNextPendingDraft(currentDraftId, yearMonth);
+}
+
+function api_getDictionaryHistory(dictId) {
+  return globalThis.api_getDictionaryHistory(dictId);
+}
+
+function api_getDictionaryList() {
+  return globalThis.api_getDictionaryList();
+}
+
+function api_getPromptList() {
+  return globalThis.api_getPromptList();
+}
+
+function api_getPromptDetail(promptId) {
+  return globalThis.api_getPromptDetail(promptId);
+}
+
+function api_createPrompt(configJson) {
+  return globalThis.api_createPrompt(configJson);
+}
+
+function api_updatePrompt(promptId, updatesJson) {
+  return globalThis.api_updatePrompt(promptId, updatesJson);
+}
+
+function api_activatePrompt(promptId) {
+  return globalThis.api_activatePrompt(promptId);
+}
+
+function api_deactivatePrompt(promptId) {
+  return globalThis.api_deactivatePrompt(promptId);
+}
+
+function api_testPrompt(promptId, testFileId) {
+  return globalThis.api_testPrompt(promptId, testFileId);
+}
+
+function api_getPromptVersionHistory(promptType) {
+  return globalThis.api_getPromptVersionHistory(promptType);
+}
+
+function api_resetToDefaultPrompt(promptType) {
+  return globalThis.api_resetToDefaultPrompt(promptType);
+}
 `
   },
   plugins: [

@@ -21,11 +21,28 @@ import { AppLogger } from './utils/logger';
 import { DocTypeDetector } from './utils/docTypeDetector';
 import './cleanup'; // Include cleanup utilities
 
+// Web App imports
+import { WebAppApi } from './webapp/WebAppApi';
+import { DraftUpdate, PromptConfigCreate, PromptConfigUpdate } from './webapp/types';
+import { JournalEntry, DraftStatus } from './types/journal';
+import { PromptType } from './types/prompt';
+
 /**
  * Main function that processes new invoices from Gmail
  * This function is called by the time-based trigger
+ *
+ * Note: GAS trigger handlers should be synchronous. The internal async work
+ * is handled by mainAsync() which is awaited properly.
  */
-async function main(): Promise<void> {
+function main(): void {
+  mainAsync();
+}
+
+/**
+ * Async implementation of main processing logic
+ * Separated from main() to ensure proper Promise handling in GAS triggers
+ */
+async function mainAsync(): Promise<void> {
   AppLogger.info('Auto Invoice Collector - Starting');
 
   try {
@@ -579,20 +596,306 @@ function setupMonthlyJournalTrigger(): void {
 }
 
 /**
- * Placeholder for monthly journal processing
- * Will be implemented in Phase 4.2
+ * Monthly journal processing trigger handler
+ * This function is called by the monthly time-based trigger
+ *
+ * Note: GAS trigger handlers should be synchronous. The internal async work
+ * is handled by processMonthlyJournalsAsync() which is awaited properly.
  */
-async function processMonthlyJournals(): Promise<void> {
+function processMonthlyJournals(): void {
+  processMonthlyJournalsAsync();
+}
+
+/**
+ * Async implementation of monthly journal processing
+ * Separated from processMonthlyJournals() to ensure proper Promise handling in GAS triggers
+ *
+ * TODO: Implement in Phase 4.2
+ * 1. Get files from previous month's folder
+ * 2. Process each file through Gemini OCR for journal extraction
+ * 3. Match against dictionary for patterns
+ * 4. Create draft entries in DraftSheet
+ * 5. Send notification with summary
+ */
+async function processMonthlyJournalsAsync(): Promise<void> {
   AppLogger.info('Monthly journal processing started');
 
-  // TODO: Implement in Phase 4.2
-  // 1. Get files from previous month's folder
-  // 2. Process each file through Gemini OCR for journal extraction
-  // 3. Match against dictionary for patterns
-  // 4. Create draft entries in DraftSheet
-  // 5. Send notification with summary
+  // TODO: Implement actual processing logic
 
   AppLogger.info('Monthly journal processing completed (placeholder)');
+}
+
+// ============================================
+// Web App Functions (Phase 4.3)
+// ============================================
+
+/**
+ * Get WebAppApi instance (singleton pattern for performance)
+ */
+let webAppApiInstance: WebAppApi | null = null;
+
+function getWebAppApi(): WebAppApi {
+  if (!webAppApiInstance) {
+    webAppApiInstance = new WebAppApi({
+      spreadsheetId: Config.getLogSheetId(),
+      geminiApiKey: Config.getGeminiApiKey()
+    });
+  }
+  return webAppApiInstance;
+}
+
+/**
+ * Web App entry point - serves the review UI
+ */
+function doGet(
+  e: GoogleAppsScript.Events.DoGet
+): GoogleAppsScript.HTML.HtmlOutput {
+  const template = HtmlService.createTemplateFromFile('index');
+  const output = template.evaluate();
+
+  output
+    .setTitle('仕訳レビュー - Auto Invoice Collector')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+  return output;
+}
+
+/**
+ * Include HTML file content (for templates)
+ */
+function include(filename: string): string {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ============================================
+// Web App API Wrappers
+// All functions return JSON strings for google.script.run
+// ============================================
+
+// Dashboard APIs
+function api_getDraftSummary(yearMonth: string): string {
+  try {
+    const result = getWebAppApi().getDraftSummary(yearMonth);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftList(yearMonth: string, status?: string): string {
+  try {
+    const draftStatus = status as DraftStatus | undefined;
+    const result = getWebAppApi().getDraftList(yearMonth, draftStatus);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getYearMonthOptions(): string {
+  try {
+    const result = getWebAppApi().getYearMonthOptions();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_bulkApprove(draftIdsJson: string): string {
+  try {
+    const draftIds = JSON.parse(draftIdsJson) as string[];
+    const result = getWebAppApi().bulkApprove(draftIds);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Review APIs
+function api_getDraftDetail(draftId: string): string {
+  try {
+    const result = getWebAppApi().getDraftDetail(draftId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftHistory(draftId: string): string {
+  try {
+    const result = getWebAppApi().getDraftHistory(draftId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftSnapshot(draftId: string, version: number): string {
+  try {
+    const result = getWebAppApi().getDraftSnapshot(draftId, version);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_updateDraft(draftId: string, updatesJson: string, reason?: string): string {
+  try {
+    const updates = JSON.parse(updatesJson) as DraftUpdate;
+    const result = getWebAppApi().updateDraft(draftId, updates, reason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_selectSuggestion(draftId: string, suggestionIndex: number): string {
+  try {
+    const result = getWebAppApi().selectSuggestion(draftId, suggestionIndex);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_setCustomEntry(draftId: string, entriesJson: string, reason: string): string {
+  try {
+    const entries = JSON.parse(entriesJson) as JournalEntry[];
+    const result = getWebAppApi().setCustomEntry(draftId, entries, reason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_approveDraft(
+  draftId: string,
+  selectedEntryJson: string,
+  registerToDict: boolean,
+  editReason?: string
+): string {
+  try {
+    const selectedEntry = JSON.parse(selectedEntryJson) as JournalEntry[];
+    const result = getWebAppApi().approveDraft(draftId, selectedEntry, registerToDict, editReason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getNextPendingDraft(currentDraftId: string, yearMonth: string): string {
+  try {
+    const result = getWebAppApi().getNextPendingDraft(currentDraftId, yearMonth);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Dictionary APIs
+function api_getDictionaryHistory(dictId: string): string {
+  try {
+    const result = getWebAppApi().getDictionaryHistory(dictId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDictionaryList(): string {
+  try {
+    const result = getWebAppApi().getDictionaryList();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Prompt APIs
+function api_getPromptList(): string {
+  try {
+    const result = getWebAppApi().getPromptList();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPromptDetail(promptId: string): string {
+  try {
+    const result = getWebAppApi().getPromptDetail(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_createPrompt(configJson: string): string {
+  try {
+    const config = JSON.parse(configJson) as PromptConfigCreate;
+    const result = getWebAppApi().createPrompt(config);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_updatePrompt(promptId: string, updatesJson: string): string {
+  try {
+    const updates = JSON.parse(updatesJson) as PromptConfigUpdate;
+    const result = getWebAppApi().updatePrompt(promptId, updates);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_activatePrompt(promptId: string): string {
+  try {
+    const result = getWebAppApi().activatePrompt(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_deactivatePrompt(promptId: string): string {
+  try {
+    const result = getWebAppApi().deactivatePrompt(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_testPrompt(promptId: string, testFileId: string): string {
+  try {
+    const result = getWebAppApi().testPrompt(promptId, testFileId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPromptVersionHistory(promptType: string): string {
+  try {
+    const type = promptType as PromptType;
+    const result = getWebAppApi().getPromptVersionHistory(type);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_resetToDefaultPrompt(promptType: string): string {
+  try {
+    const type = promptType as PromptType;
+    getWebAppApi().resetToDefaultPrompt(type);
+    return JSON.stringify({ success: true });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
 }
 
 // Export functions to GAS global scope
@@ -602,3 +905,32 @@ async function processMonthlyJournals(): Promise<void> {
 (globalThis as any).setupTrigger = setupTrigger;
 (globalThis as any).setupMonthlyJournalTrigger = setupMonthlyJournalTrigger;
 (globalThis as any).processMonthlyJournals = processMonthlyJournals;
+
+// Web App functions
+(globalThis as any).doGet = doGet;
+(globalThis as any).include = include;
+
+// API wrapper functions
+(globalThis as any).api_getDraftSummary = api_getDraftSummary;
+(globalThis as any).api_getDraftList = api_getDraftList;
+(globalThis as any).api_getYearMonthOptions = api_getYearMonthOptions;
+(globalThis as any).api_bulkApprove = api_bulkApprove;
+(globalThis as any).api_getDraftDetail = api_getDraftDetail;
+(globalThis as any).api_getDraftHistory = api_getDraftHistory;
+(globalThis as any).api_getDraftSnapshot = api_getDraftSnapshot;
+(globalThis as any).api_updateDraft = api_updateDraft;
+(globalThis as any).api_selectSuggestion = api_selectSuggestion;
+(globalThis as any).api_setCustomEntry = api_setCustomEntry;
+(globalThis as any).api_approveDraft = api_approveDraft;
+(globalThis as any).api_getNextPendingDraft = api_getNextPendingDraft;
+(globalThis as any).api_getDictionaryHistory = api_getDictionaryHistory;
+(globalThis as any).api_getDictionaryList = api_getDictionaryList;
+(globalThis as any).api_getPromptList = api_getPromptList;
+(globalThis as any).api_getPromptDetail = api_getPromptDetail;
+(globalThis as any).api_createPrompt = api_createPrompt;
+(globalThis as any).api_updatePrompt = api_updatePrompt;
+(globalThis as any).api_activatePrompt = api_activatePrompt;
+(globalThis as any).api_deactivatePrompt = api_deactivatePrompt;
+(globalThis as any).api_testPrompt = api_testPrompt;
+(globalThis as any).api_getPromptVersionHistory = api_getPromptVersionHistory;
+(globalThis as any).api_resetToDefaultPrompt = api_resetToDefaultPrompt;
