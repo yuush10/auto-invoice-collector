@@ -1,0 +1,160 @@
+# Cursor Rules for Auto Invoice Collector
+
+## Project Overview
+
+**Project:** Auto Invoice Collector - Automated invoice and receipt collection system
+
+**Purpose:** Automatically collect invoices and receipts from Gmail, extract metadata via OCR, and organize them in Google Drive with proper naming and folder structure.
+
+**Technology Stack:**
+- Runtime: Google Apps Script (V8)
+- Language: TypeScript (transpiled to JavaScript)
+- Build: Rollup
+- Testing: Jest
+- OCR/AI: Gemini API (gemini-1.5-flash)
+- Development: clasp CLI
+
+**Current Status:** MVP Phase 1 Complete (Gmail search, PDF extraction, Gemini OCR, Drive organization, logging, error notifications)
+
+## Critical Rules
+
+### DO NOT Include AI References
+Never include AI assistant references in commits, PRs, comments, or documentation.
+
+### Git Workflow (MANDATORY)
+1. **Always create feature branch** before any file modifications
+2. Branch naming: `feature/`, `fix/`, `docs/`, `refactor/`, `test/`
+3. Reference issues in commits: `Closes #N`, `Fixes #N`
+4. Create PR via `gh pr create`, merge via `gh pr merge --squash`
+5. **Never** work directly on main or merge locally
+
+### Commit Message Format
+```
+type(scope): subject
+
+body (optional)
+
+Closes #N
+```
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+## Project Structure
+
+```
+src/
+├── main.ts                     # Entry point & triggers
+├── config.ts                   # Service configurations
+├── modules/
+│   ├── gmail/                  # Gmail search & attachment extraction
+│   ├── drive/                  # Drive folder & file management
+│   ├── ocr/                    # Gemini API OCR integration
+│   ├── naming/                 # File naming logic
+│   ├── logging/                # Google Sheets logging
+│   └── notifications/          # Email notifications
+├── types/                      # TypeScript type definitions
+└── utils/                      # Utilities (logger, dateUtils)
+
+test/                           # Jest tests
+dist/                           # Build output (bundle.js)
+```
+
+## Code Style for Google Apps Script
+
+### Naming Conventions
+- **Functions**: camelCase, start with verb (`getCalendarEvents`, `mirrorEvent`)
+- **Constants**: UPPER_SNAKE_CASE
+- **Files**: PascalCase for modules (`GmailSearcher.ts`)
+
+### Coding Standards
+- Use modern JavaScript features (ES6+) supported by GAS runtime
+- Wrap all API calls in try-catch blocks
+- Use JSDoc format for function documentation
+- Minimize global variables, prefer function parameters
+- Use `Logger.log()` for development, `console.log()` for script execution
+
+### GAS Library Functions (CRITICAL)
+GAS libraries **MUST** use top-level function declarations. IIFE patterns do NOT work:
+
+```javascript
+// ✅ CORRECT
+function sync(config) {
+  // Implementation
+}
+
+// ❌ INCORRECT - Does not work in GAS libraries
+var Module = (function() {
+  function sync(config) { /* ... */ }
+  return { sync: sync };
+})();
+```
+
+### Error Handling Pattern
+```typescript
+function safeApiCall<T>(operation: () => T): T | null {
+  try {
+    return operation();
+  } catch (error) {
+    console.error('Error: ' + error.message);
+    Logger.log('Stack trace: ' + error.stack);
+    return null;
+  }
+}
+```
+
+## Development Commands
+
+```bash
+# Build
+npm run build              # Compile TypeScript and bundle
+
+# Test
+npm test                   # Run Jest tests
+
+# Deploy
+npm run push               # Push to Google Apps Script
+clasp open                 # Open in Apps Script editor
+clasp logs                 # View logs
+```
+
+## GAS Constraints & Best Practices
+
+### Execution Limits
+- Timeout: 6 minutes (consumer) / 30 minutes (Workspace)
+- API quotas: Check Google Cloud Console
+
+### Performance Tips
+- Batch API calls to minimize execution time
+- Use `CacheService` for frequently accessed data
+- Group operations where possible
+
+### Security
+- Declare minimal OAuth scopes in `appsscript.json`
+- Store API keys in Script Properties, never hardcode
+- Validate all inputs before processing
+
+## OAuth Scopes (appsscript.json)
+
+```json
+{
+  "timeZone": "Asia/Tokyo",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.labels",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.external_request"
+  ]
+}
+```
+
+## When Writing Code
+
+1. Focus on solving the problem efficiently within GAS constraints
+2. Write clean, maintainable TypeScript code
+3. Include try-catch blocks for all API calls
+4. Add JSDoc comments for public functions
+5. Follow GAS-specific conventions
+
+## Response Language
+
+Always respond in 日本語 (Japanese).
