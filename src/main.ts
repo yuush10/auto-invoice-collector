@@ -648,9 +648,10 @@ function getWebAppApi(): WebAppApi {
  * Web App entry point - serves the review UI
  */
 function doGet(
-  e: GoogleAppsScript.Events.DoGet
+  _e: GoogleAppsScript.Events.DoGet
 ): GoogleAppsScript.HTML.HtmlOutput {
-  const template = HtmlService.createTemplateFromFile('index');
+  // GAS references files as 'dist/index' when pushed from dist/index.html
+  const template = HtmlService.createTemplateFromFile('dist/index');
   const output = template.evaluate();
 
   output
@@ -663,9 +664,11 @@ function doGet(
 
 /**
  * Include HTML file content (for templates)
+ * @param filename - File name without extension (e.g., 'style.css' for dist/style.css.html)
  */
 function include(filename: string): string {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  // GAS references files as 'dist/filename' when pushed from dist/filename.html
+  return HtmlService.createHtmlOutputFromFile('dist/' + filename).getContent();
 }
 
 // ============================================
