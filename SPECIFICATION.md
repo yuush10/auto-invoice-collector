@@ -505,15 +505,15 @@ const emailContext = {
 ### Development Plan Overview
 
 ```
-Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
-──────────────   ──────────────     ──────────────      ──────────────
-雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード
-✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        📋 TODO
+Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)
+──────────────   ──────────────     ──────────────      ──────────────     ──────────────
+雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        📋 TODO            ✅ COMPLETED
 
-├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン
-├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager
-└─ Trigger導入   ├─ Drive格納       └─ GAS連携          └─ ホワイトリスト運用
-                 └─ 二重処理防止
+├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet
+├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager   ├─ Gemini仕訳提案
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          └─ ホワイトリスト    ├─ ReviewWebApp
+                 └─ 二重処理防止                                            └─ 変更履歴管理
 ```
 
 ---
@@ -602,6 +602,76 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
 
 ---
 
+### Phase 4: 仕訳自動生成・レビューWebApp（18h）- ✅ COMPLETED
+
+**Status**: Production-ready with review Web UI
+
+**Overview**: Gemini AIを使用して請求書/領収書から仕訳候補を自動生成し、Webアプリで確認・承認するシステム。電子帳簿保存法に対応した変更履歴管理機能付き。
+
+#### Phase 4.1: Infrastructure（4h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| DraftSheet管理（仕訳ドラフト保存） | ✅ | DraftSheetManager.ts |
+| DraftHistorySheet（変更履歴記録） | ✅ | DraftHistorySheetManager.ts |
+| DictionarySheet（学習辞書） | ✅ | DictionarySheetManager.ts |
+| 型定義 | ✅ | types/journal.ts, types/history.ts |
+
+**Features**:
+- 仕訳ドラフトのCRUD操作
+- 電子帳簿保存法対応の変更履歴記録
+- 取引先・勘定科目の学習辞書
+
+#### Phase 4.2: Gemini Journal Services（6h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| JournalExtractor（請求書情報抽出） | ✅ | JournalExtractor.ts |
+| JournalSuggestionService（仕訳提案） | ✅ | JournalSuggestionService.ts |
+| JournalGenerator（統合サービス） | ✅ | JournalGenerator.ts |
+| PromptService（プロンプト管理） | ✅ | PromptService.ts |
+
+**Features**:
+- Gemini AIによる請求書情報の自動抽出
+- 複数の仕訳候補を信頼度付きで提案
+- 学習辞書との照合による精度向上
+- カスタムプロンプト管理・バージョン管理
+
+#### Phase 4.3: Review Web App UI（8h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| GAS Web App基盤（HtmlService） | ✅ | doGet, index.html |
+| ダッシュボード画面 | ✅ | dashboard.html |
+| 詳細・編集画面 | ✅ | review.html |
+| 設定画面（プロンプト管理） | ✅ | settings.html |
+| Vue.js 3フロントエンド | ✅ | app.js.html |
+| サーバーサイドAPI | ✅ | WebAppApi.ts |
+
+**Features**:
+- 月別ドラフト一覧・サマリー表示
+- 書類プレビュー（Google Drive PDF埋め込み）
+- AI提案の選択またはカスタム仕訳入力
+- 書類情報の編集機能
+- 変更履歴の閲覧
+- 辞書登録オプション
+- プロンプトの作成・編集・有効化・削除
+- レスポンシブデザイン（Vue.js 3 + Tailwind CSS）
+
+**Tax Categories Supported**:
+- 10%対象
+- (軽)8%対象
+- (旧)8%対象
+- 非課税
+- 対象外
+- 源泉徴収税
+
+**UI Terminology** (電子帳簿保存法対応):
+- 「未確認」→「確認済」→「承認済」のステータスフロー
+- 編集理由は任意（記録された場合は履歴に保存）
+
+---
+
 ## Production Status
 
 ### ✅ Currently Working
@@ -613,16 +683,22 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)
 - Daily automated processing at 6 AM
 - Email notifications for errors
 - Pre-validation to skip non-invoice emails
+- **Journal entry auto-generation** via Gemini AI (Phase 4)
+- **Review Web App** for journal entry confirmation and approval
+- **Audit trail** for 電子帳簿保存法 compliance
 
 ### 📋 Known Limitations
 1. **Portal-only invoices**: Requires manual download - would need Phase 3
 2. **Services requiring login**: Not yet automated
+3. **Dictionary management UI**: Basic view only, full CRUD in future phases
 
 ### 🔄 Monitoring & Maintenance
 - ✅ Execution logs via `clasp logs`
 - ✅ ProcessingLog spreadsheet tracking
 - ✅ Error notifications to admin email
 - ✅ Cloud Run health endpoint (/health)
+- ✅ Web App for journal review and approval
+- ✅ Change history tracking in DraftHistorySheet
 - 📋 TODO: Monthly summary dashboard
 - 📋 TODO: Service health monitoring
 
