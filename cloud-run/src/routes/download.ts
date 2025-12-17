@@ -4,6 +4,9 @@
  */
 import { Router, Request, Response } from 'express';
 import puppeteer, { Browser, Page } from 'puppeteer';
+// Import vendors module to trigger vendor registration
+import '../vendors';
+
 import {
   DownloadRequest,
   DownloadResponse,
