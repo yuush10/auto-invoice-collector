@@ -21,11 +21,28 @@ import { AppLogger } from './utils/logger';
 import { DocTypeDetector } from './utils/docTypeDetector';
 import './cleanup'; // Include cleanup utilities
 
+// Web App imports
+import { WebAppApi } from './webapp/WebAppApi';
+import { DraftUpdate, PromptConfigCreate, PromptConfigUpdate } from './webapp/types';
+import { JournalEntry, DraftStatus } from './types/journal';
+import { PromptType } from './types/prompt';
+
 /**
  * Main function that processes new invoices from Gmail
  * This function is called by the time-based trigger
+ *
+ * Note: GAS trigger handlers should be synchronous. The internal async work
+ * is handled by mainAsync() which is awaited properly.
  */
-async function main(): Promise<void> {
+function main(): void {
+  mainAsync();
+}
+
+/**
+ * Async implementation of main processing logic
+ * Separated from main() to ensure proper Promise handling in GAS triggers
+ */
+async function mainAsync(): Promise<void> {
   AppLogger.info('Auto Invoice Collector - Starting');
 
   try {
@@ -536,9 +553,13 @@ function runManually(): void {
  * Run this once to set up automatic execution
  */
 function setupTrigger(): void {
-  // Remove existing triggers
+  // Remove existing triggers for main function only
   const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'main') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 
   // Create new daily trigger at 6 AM
   ScriptApp.newTrigger('main')
@@ -550,8 +571,882 @@ function setupTrigger(): void {
   Logger.log('Daily trigger created successfully');
 }
 
+/**
+ * Setup function to create the monthly journal processing trigger
+ * Run this once to set up automatic monthly journal entry generation
+ * Runs on the 5th of each month at 9 AM JST
+ */
+function setupMonthlyJournalTrigger(): void {
+  // Remove existing triggers for processMonthlyJournals function only
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'processMonthlyJournals') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new monthly trigger on the 5th at 9 AM
+  ScriptApp.newTrigger('processMonthlyJournals')
+    .timeBased()
+    .onMonthDay(5)
+    .atHour(9)
+    .create();
+
+  Logger.log('Monthly journal trigger created successfully (5th of each month at 9 AM)');
+}
+
+/**
+ * Monthly journal processing trigger handler
+ * This function is called by the monthly time-based trigger
+ *
+ * Note: GAS trigger handlers should be synchronous. The internal async work
+ * is handled by processMonthlyJournalsAsync() which is awaited properly.
+ */
+function processMonthlyJournals(): void {
+  processMonthlyJournalsAsync();
+}
+
+/**
+ * Async implementation of monthly journal processing
+ * Separated from processMonthlyJournals() to ensure proper Promise handling in GAS triggers
+ *
+ * TODO: Implement in Phase 4.2
+ * 1. Get files from previous month's folder
+ * 2. Process each file through Gemini OCR for journal extraction
+ * 3. Match against dictionary for patterns
+ * 4. Create draft entries in DraftSheet
+ * 5. Send notification with summary
+ */
+async function processMonthlyJournalsAsync(): Promise<void> {
+  AppLogger.info('Monthly journal processing started');
+
+  // TODO: Implement actual processing logic
+
+  AppLogger.info('Monthly journal processing completed (placeholder)');
+}
+
+// ============================================
+// Web App Functions (Phase 4.3)
+// ============================================
+
+/**
+ * Get WebAppApi instance (singleton pattern for performance)
+ */
+let webAppApiInstance: WebAppApi | null = null;
+
+function getWebAppApi(): WebAppApi {
+  if (!webAppApiInstance) {
+    webAppApiInstance = new WebAppApi({
+      spreadsheetId: Config.getLogSheetId(),
+      geminiApiKey: Config.getGeminiApiKey()
+    });
+  }
+  return webAppApiInstance;
+}
+
+/**
+ * Web App entry point - serves the review UI
+ */
+function doGet(
+  _e: GoogleAppsScript.Events.DoGet
+): GoogleAppsScript.HTML.HtmlOutput {
+  // GAS references files as 'dist/index' when pushed from dist/index.html
+  const template = HtmlService.createTemplateFromFile('dist/index');
+  const output = template.evaluate();
+
+  output
+    .setTitle('仕訳レビュー - Auto Invoice Collector')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+  return output;
+}
+
+/**
+ * Include HTML file content (for templates)
+ * @param filename - File name without extension (e.g., 'style.css' for dist/style.css.html)
+ */
+function include(filename: string): string {
+  // GAS references files as 'dist/filename' when pushed from dist/filename.html
+  return HtmlService.createHtmlOutputFromFile('dist/' + filename).getContent();
+}
+
+// ============================================
+// Web App API Wrappers
+// All functions return JSON strings for google.script.run
+// ============================================
+
+// Dashboard APIs
+function api_getDraftSummary(yearMonth: string): string {
+  try {
+    const result = getWebAppApi().getDraftSummary(yearMonth);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftList(yearMonth: string, status?: string): string {
+  try {
+    const draftStatus = status as DraftStatus | undefined;
+    const result = getWebAppApi().getDraftList(yearMonth, draftStatus);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getYearMonthOptions(): string {
+  try {
+    const result = getWebAppApi().getYearMonthOptions();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_bulkApprove(draftIdsJson: string): string {
+  try {
+    const draftIds = JSON.parse(draftIdsJson) as string[];
+    const result = getWebAppApi().bulkApprove(draftIds);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Review APIs
+function api_getDraftDetail(draftId: string): string {
+  try {
+    const result = getWebAppApi().getDraftDetail(draftId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftHistory(draftId: string): string {
+  try {
+    const result = getWebAppApi().getDraftHistory(draftId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDraftSnapshot(draftId: string, version: number): string {
+  try {
+    const result = getWebAppApi().getDraftSnapshot(draftId, version);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_updateDraft(draftId: string, updatesJson: string, reason?: string): string {
+  try {
+    const updates = JSON.parse(updatesJson) as DraftUpdate;
+    const result = getWebAppApi().updateDraft(draftId, updates, reason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_selectSuggestion(draftId: string, suggestionIndex: number): string {
+  try {
+    const result = getWebAppApi().selectSuggestion(draftId, suggestionIndex);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_setCustomEntry(draftId: string, entriesJson: string, reason: string): string {
+  try {
+    const entries = JSON.parse(entriesJson) as JournalEntry[];
+    const result = getWebAppApi().setCustomEntry(draftId, entries, reason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_approveDraft(
+  draftId: string,
+  selectedEntryJson: string,
+  registerToDict: boolean,
+  editReason?: string
+): string {
+  try {
+    const selectedEntry = JSON.parse(selectedEntryJson) as JournalEntry[];
+    const result = getWebAppApi().approveDraft(draftId, selectedEntry, registerToDict, editReason);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getNextPendingDraft(currentDraftId: string, yearMonth: string): string {
+  try {
+    const result = getWebAppApi().getNextPendingDraft(currentDraftId, yearMonth);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Dictionary APIs
+function api_getDictionaryHistory(dictId: string): string {
+  try {
+    const result = getWebAppApi().getDictionaryHistory(dictId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getDictionaryList(): string {
+  try {
+    const result = getWebAppApi().getDictionaryList();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Prompt APIs
+function api_getPromptList(): string {
+  try {
+    const result = getWebAppApi().getPromptList();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPromptDetail(promptId: string): string {
+  try {
+    const result = getWebAppApi().getPromptDetail(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_createPrompt(configJson: string): string {
+  try {
+    const config = JSON.parse(configJson) as PromptConfigCreate;
+    const result = getWebAppApi().createPrompt(config);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_updatePrompt(promptId: string, updatesJson: string): string {
+  try {
+    const updates = JSON.parse(updatesJson) as PromptConfigUpdate;
+    const result = getWebAppApi().updatePrompt(promptId, updates);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_activatePrompt(promptId: string): string {
+  try {
+    const result = getWebAppApi().activatePrompt(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_deactivatePrompt(promptId: string): string {
+  try {
+    const result = getWebAppApi().deactivatePrompt(promptId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_deletePrompt(promptId: string): string {
+  try {
+    getWebAppApi().deletePrompt(promptId);
+    return JSON.stringify({ success: true });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_testPrompt(promptId: string, testFileId: string): string {
+  try {
+    const result = getWebAppApi().testPrompt(promptId, testFileId);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPromptVersionHistory(promptType: string): string {
+  try {
+    const type = promptType as PromptType;
+    const result = getWebAppApi().getPromptVersionHistory(type);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_resetToDefaultPrompt(promptType: string): string {
+  try {
+    const type = promptType as PromptType;
+    getWebAppApi().resetToDefaultPrompt(type);
+    return JSON.stringify({ success: true });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// ============================================
+// Test Data Generation (Development Only)
+// ============================================
+
+import { DraftSheetManager } from './modules/journal/DraftSheetManager';
+import { SuggestedEntries } from './types/journal';
+
+/**
+ * Create test draft data for development/testing purposes
+ * Run this function from Apps Script editor to populate DraftSheet
+ */
+function createTestDraftData(): void {
+  AppLogger.info('Creating test draft data...');
+
+  const draftManager = new DraftSheetManager(Config.getLogSheetId());
+
+  // Test data: Various SaaS invoices for December 2024
+  const testDrafts: Array<{
+    fileId: string;
+    fileName: string;
+    filePath: string;
+    docType: 'invoice' | 'receipt';
+    storageType: 'electronic' | 'paper_scan';
+    vendorName: string;
+    serviceName: string;
+    amount: number;
+    taxAmount: number;
+    issueDate: string;
+    dueDate: string;
+    eventMonth: string;
+    paymentMonth: string;
+    suggestedEntries: SuggestedEntries | null;
+    selectedEntry: JournalEntry[] | null;
+    dictionaryMatchId: string;
+    status: DraftStatus;
+    reviewedBy: string;
+    reviewedAt: Date | null;
+    notes: string;
+  }> = [
+    // 1. Slack - Pending (高信頼度)
+    // Using a real PDF file for preview testing
+    {
+      fileId: '1bpZMdfuuNl9Z8A7PIr3I2XinDJ2gQyv4',
+      fileName: 'Slack_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/Slack_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Slack Technologies, LLC',
+      serviceName: 'Slack Pro',
+      amount: 1100,
+      taxAmount: 100,
+      issueDate: '2024-12-01',
+      dueDate: '2024-12-31',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 1000,
+                taxAmount: 100
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 1100
+              },
+              description: 'Slack Pro利用料 2024年12月分'
+            }],
+            confidence: 0.95,
+            reasoning: 'SaaSコミュニケーションツールの月額利用料のため通信費として計上'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '支払手数料',
+                taxClass: '課税仕入10%',
+                amount: 1000,
+                taxAmount: 100
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 1100
+              },
+              description: 'Slack Pro利用料 2024年12月分'
+            }],
+            confidence: 0.75,
+            reasoning: 'クラウドサービス利用料として支払手数料で計上する方法'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: ''
+    },
+
+    // 2. AWS - Pending (中信頼度、複数候補)
+    {
+      fileId: 'test-file-002',
+      fileName: 'AWS_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/AWS_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Amazon Web Services, Inc.',
+      serviceName: 'AWS',
+      amount: 55000,
+      taxAmount: 5000,
+      issueDate: '2024-12-03',
+      dueDate: '2025-01-03',
+      eventMonth: '2024-12',
+      paymentMonth: '2025-01',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-03',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'クラウドインフラ',
+                taxClass: '課税仕入10%',
+                amount: 50000,
+                taxAmount: 5000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 55000
+              },
+              description: 'AWS利用料 2024年12月分'
+            }],
+            confidence: 0.82,
+            reasoning: 'クラウドインフラ利用料のため通信費として計上'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-03',
+              debit: {
+                accountName: '賃借料',
+                taxClass: '課税仕入10%',
+                amount: 50000,
+                taxAmount: 5000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 55000
+              },
+              description: 'AWS利用料 2024年12月分'
+            }],
+            confidence: 0.65,
+            reasoning: 'サーバー利用料として賃借料で計上する方法'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '利用量に応じた従量課金のため金額が変動'
+    },
+
+    // 3. Google Workspace - Reviewed (選択済み)
+    {
+      fileId: 'test-file-003',
+      fileName: 'GoogleWorkspace_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/GoogleWorkspace_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Google LLC',
+      serviceName: 'Google Workspace Business Standard',
+      amount: 16500,
+      taxAmount: 1500,
+      issueDate: '2024-12-05',
+      dueDate: '2024-12-20',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-05',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 15000,
+                taxAmount: 1500
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 16500
+              },
+              description: 'Google Workspace Business Standard 2024年12月分 (10名)'
+            }],
+            confidence: 0.92,
+            reasoning: 'グループウェアサービスの月額利用料のため通信費として計上'
+          }
+        ]
+      },
+      selectedEntry: [{
+        entryNo: 1,
+        transactionDate: '2024-12-05',
+        debit: {
+          accountName: '通信費',
+          subAccountName: 'SaaS',
+          taxClass: '課税仕入10%',
+          amount: 15000,
+          taxAmount: 1500
+        },
+        credit: {
+          accountName: '未払金',
+          amount: 16500
+        },
+        description: 'Google Workspace Business Standard 2024年12月分 (10名)'
+      }],
+      dictionaryMatchId: '',
+      status: 'reviewed',
+      reviewedBy: 'test@example.com',
+      reviewedAt: new Date('2024-12-10T10:00:00'),
+      notes: '毎月定額'
+    },
+
+    // 4. Notion - Approved (承認済み)
+    {
+      fileId: 'test-file-004',
+      fileName: 'Notion_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/Notion_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'Notion Labs, Inc.',
+      serviceName: 'Notion Plus',
+      amount: 2200,
+      taxAmount: 200,
+      issueDate: '2024-12-01',
+      dueDate: '2024-12-15',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '通信費',
+                subAccountName: 'SaaS',
+                taxClass: '課税仕入10%',
+                amount: 2000,
+                taxAmount: 200
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 2200
+              },
+              description: 'Notion Plus 2024年12月分'
+            }],
+            confidence: 0.94,
+            reasoning: 'ナレッジ管理SaaSの月額利用料'
+          }
+        ]
+      },
+      selectedEntry: [{
+        entryNo: 1,
+        transactionDate: '2024-12-01',
+        debit: {
+          accountName: '通信費',
+          subAccountName: 'SaaS',
+          taxClass: '課税仕入10%',
+          amount: 2000,
+          taxAmount: 200
+        },
+        credit: {
+          accountName: '未払金',
+          amount: 2200
+        },
+        description: 'Notion Plus 2024年12月分'
+      }],
+      dictionaryMatchId: 'dict-notion-001',
+      status: 'approved',
+      reviewedBy: 'test@example.com',
+      reviewedAt: new Date('2024-12-10T11:00:00'),
+      notes: ''
+    },
+
+    // 5. GitHub - Pending (低信頼度)
+    {
+      fileId: 'test-file-005',
+      fileName: 'GitHub_2024-12_invoice.pdf',
+      filePath: '/Invoices/2024-12/GitHub_2024-12_invoice.pdf',
+      docType: 'invoice',
+      storageType: 'electronic',
+      vendorName: 'GitHub, Inc.',
+      serviceName: 'GitHub Enterprise',
+      amount: 44000,
+      taxAmount: 4000,
+      issueDate: '2024-12-02',
+      dueDate: '2025-01-02',
+      eventMonth: '2024-12',
+      paymentMonth: '2025-01',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-02',
+              debit: {
+                accountName: '支払手数料',
+                taxClass: '課税仕入10%',
+                amount: 40000,
+                taxAmount: 4000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 44000
+              },
+              description: 'GitHub Enterprise 2024年12月分'
+            }],
+            confidence: 0.58,
+            reasoning: '開発ツールのため支払手数料として計上（要確認）'
+          },
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-02',
+              debit: {
+                accountName: '通信費',
+                taxClass: '課税仕入10%',
+                amount: 40000,
+                taxAmount: 4000
+              },
+              credit: {
+                accountName: '未払金',
+                amount: 44000
+              },
+              description: 'GitHub Enterprise 2024年12月分'
+            }],
+            confidence: 0.55,
+            reasoning: 'クラウドサービスとして通信費計上も可'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '勘定科目の判断が必要'
+    },
+
+    // 6. Freee - Pending (紙スキャン)
+    {
+      fileId: 'test-file-006',
+      fileName: 'Freee_2024-12_receipt.pdf',
+      filePath: '/Invoices/2024-12/Freee_2024-12_receipt.pdf',
+      docType: 'receipt',
+      storageType: 'paper_scan',
+      vendorName: 'freee株式会社',
+      serviceName: 'freee会計',
+      amount: 3278,
+      taxAmount: 298,
+      issueDate: '2024-12-01',
+      dueDate: '',
+      eventMonth: '2024-12',
+      paymentMonth: '2024-12',
+      suggestedEntries: {
+        suggestions: [
+          {
+            entries: [{
+              entryNo: 1,
+              transactionDate: '2024-12-01',
+              debit: {
+                accountName: '支払手数料',
+                subAccountName: '会計ソフト',
+                taxClass: '課税仕入10%',
+                amount: 2980,
+                taxAmount: 298
+              },
+              credit: {
+                accountName: '普通預金',
+                amount: 3278
+              },
+              description: 'freee会計 スタンダードプラン 2024年12月分'
+            }],
+            confidence: 0.88,
+            reasoning: '会計ソフト利用料のため支払手数料として計上'
+          }
+        ]
+      },
+      selectedEntry: null,
+      dictionaryMatchId: '',
+      status: 'pending',
+      reviewedBy: '',
+      reviewedAt: null,
+      notes: '紙領収書からスキャン'
+    }
+  ];
+
+  // Create drafts
+  let created = 0;
+  for (const draft of testDrafts) {
+    try {
+      draftManager.create(draft, 'test-data-generator');
+      created++;
+      AppLogger.info(`Created test draft: ${draft.vendorName} - ${draft.serviceName}`);
+    } catch (error) {
+      AppLogger.error(`Failed to create test draft for ${draft.vendorName}`, error as Error);
+    }
+  }
+
+  AppLogger.info(`Test data creation complete: ${created}/${testDrafts.length} drafts created`);
+  Logger.log(`Test data creation complete: ${created}/${testDrafts.length} drafts created`);
+}
+
+/**
+ * Clear all test data from DraftSheet (for cleanup)
+ */
+function clearTestDraftData(): void {
+  const spreadsheet = SpreadsheetApp.openById(Config.getLogSheetId());
+  const sheet = spreadsheet.getSheetByName('DraftSheet');
+
+  if (!sheet) {
+    Logger.log('DraftSheet not found');
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+    Logger.log(`Deleted ${lastRow - 1} rows from DraftSheet`);
+  } else {
+    Logger.log('DraftSheet is already empty');
+  }
+}
+
 // Export functions to GAS global scope
 // In Google Apps Script, 'this' at the top level refers to the global scope
 (globalThis as any).main = main;
 (globalThis as any).runManually = runManually;
 (globalThis as any).setupTrigger = setupTrigger;
+(globalThis as any).setupMonthlyJournalTrigger = setupMonthlyJournalTrigger;
+(globalThis as any).processMonthlyJournals = processMonthlyJournals;
+
+// Web App functions
+(globalThis as any).doGet = doGet;
+(globalThis as any).include = include;
+
+// API wrapper functions
+(globalThis as any).api_getDraftSummary = api_getDraftSummary;
+(globalThis as any).api_getDraftList = api_getDraftList;
+(globalThis as any).api_getYearMonthOptions = api_getYearMonthOptions;
+(globalThis as any).api_bulkApprove = api_bulkApprove;
+(globalThis as any).api_getDraftDetail = api_getDraftDetail;
+(globalThis as any).api_getDraftHistory = api_getDraftHistory;
+(globalThis as any).api_getDraftSnapshot = api_getDraftSnapshot;
+(globalThis as any).api_updateDraft = api_updateDraft;
+(globalThis as any).api_selectSuggestion = api_selectSuggestion;
+(globalThis as any).api_setCustomEntry = api_setCustomEntry;
+(globalThis as any).api_approveDraft = api_approveDraft;
+(globalThis as any).api_getNextPendingDraft = api_getNextPendingDraft;
+(globalThis as any).api_getDictionaryHistory = api_getDictionaryHistory;
+(globalThis as any).api_getDictionaryList = api_getDictionaryList;
+(globalThis as any).api_getPromptList = api_getPromptList;
+(globalThis as any).api_getPromptDetail = api_getPromptDetail;
+(globalThis as any).api_createPrompt = api_createPrompt;
+(globalThis as any).api_updatePrompt = api_updatePrompt;
+(globalThis as any).api_activatePrompt = api_activatePrompt;
+(globalThis as any).api_deactivatePrompt = api_deactivatePrompt;
+(globalThis as any).api_deletePrompt = api_deletePrompt;
+(globalThis as any).api_testPrompt = api_testPrompt;
+(globalThis as any).api_getPromptVersionHistory = api_getPromptVersionHistory;
+(globalThis as any).api_resetToDefaultPrompt = api_resetToDefaultPrompt;
+
+// Test data functions
+(globalThis as any).createTestDraftData = createTestDraftData;
+(globalThis as any).clearTestDraftData = clearTestDraftData;
+
+// Debug function to diagnose data issues
+function debugDraftData(): void {
+  const spreadsheetId = Config.getLogSheetId();
+  Logger.log('=== DEBUG DRAFT DATA ===');
+  Logger.log(`SpreadsheetId: ${spreadsheetId}`);
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  Logger.log(`Spreadsheet name: ${spreadsheet.getName()}`);
+
+  // List all sheets
+  const sheets = spreadsheet.getSheets();
+  Logger.log(`Total sheets: ${sheets.length}`);
+  for (const s of sheets) {
+    Logger.log(`  - Sheet: "${s.getName()}" (rows: ${s.getLastRow()})`);
+  }
+
+  // Check DraftSheet specifically
+  const draftSheet = spreadsheet.getSheetByName('DraftSheet');
+  if (!draftSheet) {
+    Logger.log('ERROR: DraftSheet not found!');
+    return;
+  }
+
+  const lastRow = draftSheet.getLastRow();
+  Logger.log(`DraftSheet last row: ${lastRow}`);
+
+  if (lastRow > 1) {
+    // Get first data row
+    const headers = draftSheet.getRange(1, 1, 1, 18).getValues()[0];
+    const firstRow = draftSheet.getRange(2, 1, 1, 18).getValues()[0];
+    Logger.log(`Headers: ${JSON.stringify(headers)}`);
+    Logger.log(`First data row: ${JSON.stringify(firstRow)}`);
+
+    // Find event_month column
+    const eventMonthIdx = headers.indexOf('event_month');
+    Logger.log(`event_month column index: ${eventMonthIdx}`);
+    if (eventMonthIdx >= 0) {
+      const eventMonthValue = firstRow[eventMonthIdx];
+      Logger.log(`First event_month value: "${eventMonthValue}" (type: ${typeof eventMonthValue})`);
+    }
+  }
+
+  // Test WebAppApi directly
+  Logger.log('--- Testing WebAppApi ---');
+  const api = new WebAppApi({
+    spreadsheetId: spreadsheetId,
+    geminiApiKey: Config.getGeminiApiKey()
+  });
+  const options = api.getYearMonthOptions();
+  Logger.log(`YearMonthOptions: ${JSON.stringify(options)}`);
+}
+(globalThis as any).debugDraftData = debugDraftData;

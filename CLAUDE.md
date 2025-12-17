@@ -16,12 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - OCR/AI: Gemini API (gemini-1.5-flash)
 - Development: clasp CLI
 
-**Current Status:** MVP Phase 1 Complete
+**Current Status:** Phase 4.3 Complete (Journal Entry Review Web App)
 - Gmail search and PDF attachment extraction
 - Gemini OCR for service name and billing month extraction
 - Google Drive organization by year-month folders
 - Processing log with duplicate detection
 - Error notification system
+- Email body to PDF conversion via Cloud Run (Phase 2)
+- **Journal entry auto-generation** via Gemini AI (Phase 4)
+- **Review Web App** for journal confirmation and approval
+- **Audit trail** for 電子帳簿保存法 compliance
 
 This document provides guidelines for AI assistants working on this codebase, focusing on GAS-specific development practices and workflows.
 
@@ -156,6 +160,82 @@ git fetch --prune                      # Clean up remote tracking branches
 - Use `--delete-branch` to auto-cleanup remote branch
 - Never use `git merge` locally and push to main
 
+### 2.1 Multi-Phase Development (Development Branches)
+
+For large features spanning multiple sub-issues (like Phase 4 with 5 sub-issues), use a **development branch** to isolate work from main until the entire phase is complete and tested.
+
+**Why Use Development Branches:**
+- **Easy rollback**: If the phase fails midway, main remains unaffected
+- **Integration testing**: Test all sub-features together before main merge
+- **Stable main**: Production code stays reliable
+- **Clear history**: Single merge commit for the entire phase
+
+**Branch Structure:**
+```
+main (stable, production-ready)
+  └── develop/phase-name (integration branch)
+        ├── feature/phase-name.1-description
+        ├── feature/phase-name.2-description
+        ├── feature/phase-name.3-description
+        └── ...
+```
+
+**Workflow:**
+
+```bash
+# 1. Create development branch from main (once per phase)
+git checkout main && git pull
+git checkout -b develop/phase4
+git push origin develop/phase4 -u
+
+# 2. For each sub-issue, branch from develop branch
+git checkout develop/phase4 && git pull
+git checkout -b feature/phase4.1-infrastructure
+
+# 3. Make changes and commit
+git add .
+git commit -m "feat(phase4.1): description
+
+Closes #33"
+
+# 4. Push and create PR targeting develop branch (NOT main)
+git push origin feature/phase4.1-infrastructure
+gh pr create --base develop/phase4 \
+  --title "[Phase 4.1] Feature Description" \
+  --body "..."
+
+# 5. After PR approval, merge to develop branch
+gh pr merge <PR-number> --squash --delete-branch
+
+# 6. Repeat steps 2-5 for each sub-issue
+
+# 7. After ALL sub-issues complete and tested, merge develop to main
+git checkout develop/phase4 && git pull
+gh pr create --base main --head develop/phase4 \
+  --title "Phase 4: Complete Feature Name" \
+  --body "Merges all Phase 4 sub-issues..."
+
+# 8. After final PR approval
+gh pr merge <PR-number> --squash
+
+# 9. Cleanup
+git checkout main && git pull
+git branch -d develop/phase4
+git push origin --delete develop/phase4
+```
+
+**When to Use:**
+- Phases with 3+ related sub-issues
+- Features that require integration testing across components
+- High-risk changes where rollback capability is important
+- Features with compliance requirements (e.g., 電子帳簿保存法)
+
+**When NOT to Use:**
+- Single-issue features
+- Small bug fixes
+- Documentation updates
+- Independent enhancements
+
 ### 3. Commit Message Format
 Use conventional commits:
 ```
@@ -204,11 +284,27 @@ auto-invoice-collector/
 │   │   ├── logging/
 │   │   │   └── ProcessingLogger.ts        # Google Sheets logging
 │   │   │
-│   │   └── notifications/
-│   │       └── Notifier.ts                # Email notifications
+│   │   ├── notifications/
+│   │   │   └── Notifier.ts                # Email notifications
+│   │   │
+│   │   └── journal/                       # Phase 4: Journal entry management
+│   │       ├── DraftSheetManager.ts       # Draft CRUD operations
+│   │       ├── DraftHistorySheetManager.ts # Change history tracking
+│   │       ├── DictionarySheetManager.ts  # Learning dictionary
+│   │       ├── JournalExtractor.ts        # Invoice data extraction
+│   │       ├── JournalSuggestionService.ts # Journal entry suggestions
+│   │       ├── JournalGenerator.ts        # Orchestration service
+│   │       └── PromptService.ts           # Prompt management
+│   │
+│   ├── webapp/                  # Phase 4.3: Review Web App
+│   │   ├── WebAppApi.ts         # Server-side API for frontend
+│   │   └── types.ts             # Web App type definitions
 │   │
 │   ├── types/
-│   │   └── index.ts             # TypeScript type definitions
+│   │   ├── index.ts             # TypeScript type definitions
+│   │   ├── journal.ts           # Journal entry types
+│   │   ├── history.ts           # History tracking types
+│   │   └── prompt.ts            # Prompt configuration types
 │   │
 │   └── utils/
 │       ├── logger.ts            # Logging utilities
@@ -220,7 +316,13 @@ auto-invoice-collector/
 │       └── main.integration.test.ts  # Integration tests
 │
 ├── dist/                        # Build output (generated)
-│   └── bundle.js                # Compiled & bundled JavaScript
+│   ├── bundle.js                # Compiled & bundled JavaScript
+│   ├── index.html               # Web App main page
+│   ├── dashboard.html           # Dashboard component
+│   ├── review.html              # Review/detail component
+│   ├── settings.html            # Settings component
+│   ├── app.js.html              # Vue.js application
+│   └── style.css.html           # Custom styles
 │
 ├── docs/                        # Documentation
 │   └── E2E_TESTING_CHECKLIST.md
@@ -232,9 +334,11 @@ auto-invoice-collector/
 ```
 
 **Key Files:**
-- `src/main.ts`: Contains `main()`, `runManually()`, and `setupTrigger()` functions
+- `src/main.ts`: Contains `main()`, `runManually()`, `setupTrigger()`, `doGet()` and API functions
 - `src/config.ts`: Service configurations (Gmail search queries, extraction types)
+- `src/webapp/WebAppApi.ts`: Server-side API for Review Web App
 - `dist/bundle.js`: Final output pushed to Google Apps Script
+- `dist/*.html`: Web App HTML files pushed to Google Apps Script
 - `appsscript.json`: OAuth scopes and GAS configuration
 
 ### Code Style for Apps Script
@@ -546,6 +650,9 @@ The goal is to create a reliable, maintainable invoice collection system that:
 - Organizes files in Google Drive by year-month
 - Maintains processing logs with duplicate detection
 - Sends error notifications when issues occur
+- **Generates journal entry suggestions via Gemini AI**
+- **Provides a Web App for reviewing and approving journal entries**
+- **Maintains audit trail for 電子帳簿保存法 compliance**
 
 Always:
 1. Check GitHub issues before starting work

@@ -1,5 +1,6 @@
 **/**
 !dist/bundle.js
+!dist/*.html
 !appsscript.json
 node_modules/
 src/
