@@ -13,6 +13,24 @@ export interface ServiceConfig {
 }
 
 /**
+ * Vendor configuration for portal automation (Phase 3)
+ */
+export interface VendorConfig {
+  /** Unique vendor identifier */
+  vendorKey: string;
+  /** Vendor display name */
+  vendorName: string;
+  /** Domain patterns for URL matching */
+  domainPatterns: string[];
+  /** URL pattern for more specific matching */
+  urlPattern?: RegExp;
+  /** Whether this vendor requires login */
+  loginRequired: boolean;
+  /** Special handling type */
+  specialHandling?: 'api' | 'oauth' | 'mfa-required';
+}
+
+/**
  * Service configurations for invoice collection
  * Add new services here as needed
  */
@@ -69,6 +87,33 @@ export const SERVICES: ServiceConfig[] = [
     name: 'Mailchimp',
     searchQuery: 'from:no-reply@mailchimp.com',
     extractionType: 'body'
+  }
+];
+
+/**
+ * Vendor configurations for portal automation (Phase 3)
+ * These vendors require login automation to download invoices
+ */
+export const VENDOR_CONFIGS: VendorConfig[] = [
+  {
+    vendorKey: 'ibj',
+    vendorName: 'IBJ',
+    domainPatterns: ['ibjapan.com'],
+    loginRequired: true
+  },
+  {
+    vendorKey: 'aitemasu',
+    vendorName: 'Aitemasu',
+    domainPatterns: ['aitemasu.me'],
+    loginRequired: true
+  },
+  {
+    vendorKey: 'google-ads',
+    vendorName: 'Google Ads',
+    domainPatterns: ['ads.google.com'],
+    urlPattern: /ads\.google\.com\/aw\/billing/,
+    loginRequired: true,
+    specialHandling: 'api'
   }
 ];
 

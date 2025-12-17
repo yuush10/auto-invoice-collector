@@ -1,7 +1,7 @@
 {
-  "name": "email-to-pdf",
-  "version": "1.0.0",
-  "description": "Email body to PDF conversion service for Auto Invoice Collector",
+  "name": "invoice-automation-service",
+  "version": "2.0.0",
+  "description": "Invoice automation service (email-to-pdf and vendor portal download) for Auto Invoice Collector",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -14,14 +14,17 @@
     "pdf",
     "puppeteer",
     "cloud-run",
-    "invoice"
+    "invoice",
+    "automation",
+    "vendor-portal"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "puppeteer": "^21.6.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "@google-cloud/secret-manager": "^5.0.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
