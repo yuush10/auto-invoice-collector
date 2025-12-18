@@ -914,6 +914,32 @@ function api_resetToDefaultPrompt(promptType: string): string {
 // Test Data Generation (Development Only)
 // ============================================
 
+// Vendor Invoice Processing (Phase 3)
+import { processVendorInvoices as processVendorInvoicesImpl } from './modules/vendors/VendorInvoiceProcessor';
+import { DownloadOptions as VendorDownloadOptions } from './modules/vendors/VendorClient';
+
+/**
+ * Process vendor invoices: download from Cloud Run and upload to Google Drive
+ * @param vendorKey Vendor identifier (e.g., 'aitemasu', 'ibj', 'google-ads')
+ * @param optionsJson Optional download options as JSON string
+ * @returns Processing result as JSON string
+ */
+function downloadVendorInvoices(vendorKey: string, optionsJson?: string): string {
+  try {
+    AppLogger.info(`[Main] Processing vendor invoices for ${vendorKey}`);
+
+    const options = optionsJson ? JSON.parse(optionsJson) as VendorDownloadOptions : undefined;
+    const result = processVendorInvoicesImpl(vendorKey, options);
+
+    AppLogger.info(`[Main] Vendor processing complete: ${result.filesUploaded.length} files uploaded`);
+
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    AppLogger.error(`[Main] Vendor processing failed for ${vendorKey}`, error as Error);
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
 import { DraftSheetManager } from './modules/journal/DraftSheetManager';
 import { SuggestedEntries } from './types/journal';
 
@@ -1397,6 +1423,19 @@ function clearTestDraftData(): void {
 // Test data functions
 (globalThis as any).createTestDraftData = createTestDraftData;
 (globalThis as any).clearTestDraftData = clearTestDraftData;
+
+// Vendor invoice functions (Phase 3)
+(globalThis as any).downloadVendorInvoices = downloadVendorInvoices;
+
+/**
+ * Test function to download Aitemasu invoices
+ * Run this from GAS editor dropdown
+ */
+function downloadAitemasuInvoices(): void {
+  const result = downloadVendorInvoices('aitemasu');
+  Logger.log(result);
+}
+(globalThis as any).downloadAitemasuInvoices = downloadAitemasuInvoices;
 
 // Debug function to diagnose data issues
 function debugDraftData(): void {

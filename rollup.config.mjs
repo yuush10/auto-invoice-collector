@@ -162,6 +162,15 @@ function clearTestDraftData() {
 function debugDraftData() {
   return globalThis.debugDraftData();
 }
+
+// Vendor invoice functions (Phase 3)
+function downloadVendorInvoices(vendorKey, optionsJson) {
+  return globalThis.downloadVendorInvoices(vendorKey, optionsJson);
+}
+
+function downloadAitemasuInvoices() {
+  return globalThis.downloadAitemasuInvoices();
+}
 `
   },
   plugins: [

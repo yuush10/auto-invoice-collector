@@ -14,11 +14,18 @@ import {
   DownloadRequest,
   DownloadResponse,
   VendorCredentials,
+  DownloadedFile,
   isVendorWhitelisted,
   getVendorConfig,
 } from '../vendors/types';
 import { getVendorRegistry } from '../vendors/VendorRegistry';
 import { getSecretManager } from '../services/SecretManager';
+import {
+  GeminiOcrService,
+  DocTypeDetector,
+  FileNamingService,
+  DocumentType,
+} from '../services/GeminiOcrService';
 
 const router = Router();
 
@@ -132,8 +139,11 @@ async function getBrowser(profilePath?: string, demoMode = false): Promise<Brows
       console.log('[Download] Demo mode: using headful browser');
     }
 
-    // On macOS, use system Chrome to avoid Rosetta/Chromium compatibility issues
-    if (process.platform === 'darwin') {
+    // Set Chrome executable path based on environment
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      console.log(`[Download] Using Chrome from env: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+    } else if (process.platform === 'darwin') {
       launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
       console.log('[Download] Using system Chrome on macOS');
     }
@@ -443,6 +453,55 @@ router.post('/download', async (req: Request, res: Response) => {
     log('Downloading invoices...');
     const files = await vendor.downloadInvoices(page, request.options);
     log(`Downloaded ${files.length} file(s)`);
+
+    // OCR processing for metadata extraction
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (geminiApiKey && files.length > 0) {
+      log('Processing files with OCR for metadata extraction...');
+      const ocrService = new GeminiOcrService(geminiApiKey);
+      const fileNamingService = new FileNamingService();
+
+      for (const file of files) {
+        try {
+          log(`OCR processing: ${file.filename}`);
+          const extracted = await ocrService.extract(file.base64, {
+            filename: file.filename,
+          });
+
+          // Determine document type using detector
+          const docType = DocTypeDetector.determineDocType({
+            hasReceiptInContent: extracted.hasReceiptInContent || false,
+            hasInvoiceInContent: extracted.hasInvoiceInContent || false,
+            hasReceiptInFilename: DocTypeDetector.hasReceiptKeywords(file.filename),
+            hasInvoiceInFilename: DocTypeDetector.hasInvoiceKeywords(file.filename),
+          });
+
+          // Update file metadata
+          file.serviceName = extracted.serviceName;
+          file.billingMonth = extracted.eventMonth;
+          file.documentType = docType;
+          file.ocrConfidence = extracted.confidence;
+          file.ocrNotes = extracted.notes;
+
+          // Generate suggested filename
+          if (extracted.eventMonth && extracted.serviceName) {
+            file.suggestedFilename = fileNamingService.generate(
+              extracted.serviceName,
+              extracted.eventMonth,
+              docType
+            );
+            log(`Suggested filename: ${file.suggestedFilename}`);
+          }
+
+          log(`OCR complete: ${extracted.serviceName} (${extracted.eventMonth}) - ${docType}`);
+        } catch (ocrError) {
+          log(`OCR failed for ${file.filename}: ${(ocrError as Error).message}`);
+          // Continue with other files even if OCR fails for one
+        }
+      }
+    } else if (!geminiApiKey) {
+      log('GEMINI_API_KEY not set, skipping OCR processing');
+    }
 
     const duration = Date.now() - startTime;
     log(`Completed in ${duration}ms`);
