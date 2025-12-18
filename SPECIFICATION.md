@@ -508,12 +508,14 @@ const emailContext = {
 Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)
 ──────────────   ──────────────     ──────────────      ──────────────     ──────────────
 雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成
-✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        📋 TODO            ✅ COMPLETED
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        🔄 IN PROGRESS     ✅ COMPLETED
 
 ├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet
-├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager   ├─ Gemini仕訳提案
-└─ Trigger導入   ├─ Drive格納       └─ GAS連携          └─ ホワイトリスト    ├─ ReviewWebApp
-                 └─ 二重処理防止                                            └─ 変更履歴管理
+├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         │  ✅ Aitemasu      ├─ Gemini仕訳提案
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  📋 IBJ           ├─ ReviewWebApp
+                 └─ 二重処理防止                        │  📋 Google Ads    └─ 変更履歴管理
+                                                       ├─ Secret Manager
+                                                       └─ Gemini OCR連携
 ```
 
 ---
@@ -583,22 +585,47 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase
 
 ---
 
-### Phase 3: URLダウンロード（15h）- 📋 TODO
+### Phase 3: URLダウンロード（15h）- 🔄 IN PROGRESS
 
-**Status**: Not started
+**Status**: Aitemasu vendor completed, infrastructure ready
 
-| タスク | 工数 | 状態 | 成果物 |
-|---|---|---|---|
-| URL抽出・vendorKey判定 | 3h | 📋 | UrlExtractor.ts |
-| vendor別ログイン実装（1〜2ベンダー） | 6h | 📋 | vendors/*.ts |
-| Secret Manager連携 | 4h | 📋 | SecretClient.ts |
-| 統合テスト | 2h | 📋 | E2Eテスト |
+#### Phase 3.1: Infrastructure（4h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Cloud Run download service | ✅ | cloud-run/src/routes/download.ts |
+| Vendor registry pattern | ✅ | cloud-run/src/vendors/VendorRegistry.ts |
+| Secret Manager integration | ✅ | cloud-run/src/services/SecretManager.ts |
+| Cookie-based authentication | ✅ | Manual login flow with cookie storage |
+
+#### Phase 3.3: Aitemasu Vendor（6h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Aitemasu browser automation | ✅ | cloud-run/src/vendors/AitemasuVendor.ts |
+| Stripe billing portal navigation | ✅ | Settings → プラン・請求管理 → カスタマーポータル |
+| PDF download via CDP | ✅ | Download capture from Stripe file_url |
+| Gemini OCR integration | ✅ | cloud-run/src/services/GeminiOcrService.ts |
+| GAS VendorInvoiceProcessor | ✅ | src/modules/vendors/VendorInvoiceProcessor.ts |
+| Google Drive upload | ✅ | YYYY-MM-ServiceName-{請求書/領収書}.pdf |
+
+**Supported Flow**:
+```
+GAS downloadAitemasuInvoices()
+    → Cloud Run /download (invoice-ocr service)
+    → Puppeteer: Navigate Aitemasu → Stripe Billing Portal
+    → Download PDF via CDP
+    → Gemini OCR: Extract service name, billing month, document type
+    → Return to GAS with metadata
+    → Upload to Google Drive with proper naming
+```
+
+#### Phase 3.2: IBJ Vendor - 📋 TODO
+#### Phase 3.4: Google Ads Vendor - 📋 TODO
 
 **Use Cases**:
 - Services requiring portal login to download invoices
 - Automated invoice retrieval from vendor dashboards
-
-**Priority**: Low (manual download currently acceptable)
 
 ---
 

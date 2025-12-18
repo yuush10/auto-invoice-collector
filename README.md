@@ -305,10 +305,25 @@ Email body to PDF conversion (Issue #29):
 
 **Supported services**: Canva, Mailchimp, and other email-body-only invoices
 
-### Future Phases
+### Phase 3 - 🔄 In Progress
 
-- Phase 3: URL login & download automation (Issue #30)
-- Phase 4: Journal entry auto-generation (Issues #33-#38)
+Vendor portal login & invoice download automation:
+- ✅ Phase 3.1: Download infrastructure (Issue #60)
+- ✅ Phase 3.3: Aitemasu vendor implementation (Issue #33)
+  - Browser automation via Puppeteer
+  - Stripe billing portal navigation
+  - Gemini OCR metadata extraction
+  - Google Drive upload with proper naming
+- 📋 Phase 3.2: IBJ vendor (TODO)
+- 📋 Phase 3.4: Google Ads vendor (TODO)
+
+### Phase 4 - ✅ Complete
+
+Journal entry auto-generation (Issues #33-#38):
+- ✅ DraftSheet management
+- ✅ Gemini AI journal suggestions
+- ✅ Review Web App UI
+- ✅ Audit trail for 電子帳簿保存法 compliance
 
 ## Documentation
 
