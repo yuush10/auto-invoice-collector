@@ -15,8 +15,13 @@ export {
   getVendor,
 } from './VendorRegistry';
 
-// Note: Individual vendor implementations will be added in Phase 3.2-3.4
-// Example:
-// export { IBJVendor } from './IBJVendor';
-// export { AitemasuVendor } from './AitemasuVendor';
-// export { GoogleAdsVendor } from './GoogleAdsVendor';
+// Vendor implementations
+export { AitemasuVendor } from './AitemasuVendor';
+// export { IBJVendor } from './IBJVendor';         // Phase 3.2
+// export { GoogleAdsVendor } from './GoogleAdsVendor'; // Phase 3.4
+
+// Register vendors on module load
+import { AitemasuVendor } from './AitemasuVendor';
+import { registerVendor } from './VendorRegistry';
+
+registerVendor(new AitemasuVendor());

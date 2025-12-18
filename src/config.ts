@@ -160,4 +160,16 @@ export class Config {
   static getInvokerServiceAccount(): string {
     return this.getProperty('INVOKER_SERVICE_ACCOUNT');
   }
+
+  /**
+   * Get Cloud Run URL for vendor invoice automation (Phase 3)
+   * Falls back to CLOUD_RUN_URL if not set
+   */
+  static getVendorCloudRunUrl(): string {
+    try {
+      return this.getProperty('VENDOR_CLOUD_RUN_URL');
+    } catch {
+      return this.getCloudRunUrl();
+    }
+  }
 }

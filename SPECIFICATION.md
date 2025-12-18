@@ -1,5 +1,156 @@
 # Auto Invoice Collector - Technical Specification
 
+## System Architecture
+
+### Overview
+
+Auto Invoice Collector is a cloud-based system that automatically collects invoices and receipts from multiple sources, extracts metadata using AI, and organizes them in Google Drive with proper naming and folder structure.
+
+**Key Components**:
+- **Google Apps Script (GAS)**: Orchestration layer running on Google Cloud
+- **Cloud Run Services**: PDF conversion and vendor portal automation
+- **Google Drive**: File storage organized by year-month
+- **Google Sheets**: Processing logs and journal draft management
+- **Gemini API**: OCR and AI-powered metadata extraction
+
+### System Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              GOOGLE CLOUD INFRASTRUCTURE                             │
+│                         (All processing happens here, not on your laptop)            │
+│                                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐│
+│  │                         GOOGLE APPS SCRIPT (GAS)                                ││
+│  │                                                                                 ││
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────────────────┐││
+│  │  │ Daily Trigger   │  │ Monthly Trigger │  │ Monthly Trigger                  │││
+│  │  │ 6 AM            │  │ 3rd at 10 AM    │  │ 5th at 9 AM                      │││
+│  │  │                 │  │                 │  │                                  │││
+│  │  │ main()          │  │ processAll      │  │ processMonthly                   │││
+│  │  │ Email Invoices  │  │ VendorInvoices()│  │ Journals()                       │││
+│  │  └────────┬────────┘  └────────┬────────┘  └──────────────────────────────────┘││
+│  │           │                    │                                                ││
+│  │           ▼                    ▼                                                ││
+│  │  ┌─────────────────────────────────────────────────────────────────────────────┐││
+│  │  │                         PROCESSING MODULES                                  │││
+│  │  │                                                                             │││
+│  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐│││
+│  │  │  │ GmailSearcher│  │ CloudRun     │  │ Gemini OCR   │  │ FolderManager   ││││
+│  │  │  │              │  │ Client       │  │ Service      │  │ FileUploader    ││││
+│  │  │  │ - Search     │  │              │  │              │  │                 ││││
+│  │  │  │ - Extract    │  │ - Convert    │  │ - Extract    │  │ - Year-Month    ││││
+│  │  │  │ - Mark Done  │  │ - Download   │  │ - Suggest    │  │ - Upload        ││││
+│  │  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘│││
+│  │  └─────────┼─────────────────┼─────────────────┼─────────────────────┼─────────┘││
+│  │            │                 │                 │                     │          ││
+│  └────────────┼─────────────────┼─────────────────┼─────────────────────┼──────────┘│
+│               │                 │                 │                     │           │
+│               ▼                 ▼                 ▼                     ▼           │
+│  ┌──────────────────┐  ┌────────────────────┐  ┌────────────────┐  ┌────────────────┐
+│  │     Gmail        │  │   Cloud Run        │  │   Gemini API   │  │  Google Drive  │
+│  │                  │  │                    │  │                │  │                │
+│  │ - Invoice emails │  │ email-to-pdf:      │  │ gemini-2.0-    │  │ /Invoices/     │
+│  │ - Attachments    │  │  - HTML→PDF        │  │ flash          │  │  └─2025-01/    │
+│  │ - Processed label│  │                    │  │                │  │  └─2025-02/    │
+│  │                  │  │ invoice-ocr:       │  │ - OCR          │  │  └─...         │
+│  └──────────────────┘  │  - Puppeteer       │  │ - Extraction   │  │                │
+│                        │  - Vendor login    │  │ - Journal      │  │ Files:         │
+│                        │  - PDF download    │  │   Suggestion   │  │ YYYY-MM-Name-  │
+│                        │  - OCR processing  │  │                │  │ 請求書.pdf     │
+│                        └────────────────────┘  └────────────────┘  └────────────────┘
+│                                 │                                                    │
+│                                 ▼                                                    │
+│                        ┌────────────────────┐                                        │
+│                        │  External Vendors  │                                        │
+│                        │                    │                                        │
+│                        │ - Aitemasu→Stripe  │                                        │
+│                        │ - IBJ (TODO)       │                                        │
+│                        │ - Google Ads (TODO)│                                        │
+│                        └────────────────────┘                                        │
+│                                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐│
+│  │                            GOOGLE SHEETS                                        ││
+│  │                                                                                 ││
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐││
+│  │  │ ProcessingLog│  │ DraftSheet   │  │ Dictionary   │  │ PromptConfig         │││
+│  │  │              │  │              │  │ Sheet        │  │ Sheet                │││
+│  │  │ - Processed  │  │ - Journal    │  │              │  │                      │││
+│  │  │   records    │  │   drafts     │  │ - Learned    │  │ - Custom prompts     │││
+│  │  │ - Hash check │  │ - Suggested  │  │   patterns   │  │ - Gemini settings    │││
+│  │  │ - Duplicates │  │   entries    │  │ - Auto match │  │                      │││
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────────────┘││
+│  │                                                                                 ││
+│  │  ┌──────────────────────────────────────────┐                                   ││
+│  │  │ History Sheets (電子帳簿保存法 Compliance)│                                   ││
+│  │  │                                          │                                   ││
+│  │  │ - DraftHistorySheet (audit trail)        │                                   ││
+│  │  │ - DictionaryHistorySheet (changes)       │                                   ││
+│  │  └──────────────────────────────────────────┘                                   ││
+│  └─────────────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow by Trigger Type
+
+#### 1. Daily Email Processing (6 AM)
+
+```
+Gmail ──► GAS (main()) ──► Gemini OCR ──► Google Drive
+  │           │                │               │
+  │           │                │               ▼
+  │           │                │          /2025-12/
+  │           │                │          Service-請求書.pdf
+  │           │                │
+  ▼           ▼                ▼
+Emails    Cloud Run      Extract:
+from:     (email-to-pdf) - service_name
+vendors   for body-only  - event_month
+          invoices       - doc_type
+```
+
+#### 2. Monthly Vendor Processing (3rd at 10 AM)
+
+```
+GAS ──────────────► Cloud Run (invoice-ocr) ──────────────► Google Drive
+     POST /download      │                                      │
+     {vendorKey}         ▼                                      ▼
+                   ┌───────────────┐                       /2025-12/
+                   │ Puppeteer     │                       Aitemasu-領収書.pdf
+                   │ - Load cookie │
+                   │ - Navigate    │
+                   │ - Download PDF│
+                   └───────┬───────┘
+                           │
+                           ▼
+                   ┌───────────────┐
+                   │ Gemini OCR    │
+                   │ - service_name│
+                   │ - billing_mon │
+                   │ - doc_type    │
+                   └───────────────┘
+```
+
+#### 3. Monthly Journal Processing (5th at 9 AM)
+
+```
+GAS ──► Google Drive ──► Gemini API ──► DraftSheet ──► Review Web App
+         │                   │              │               │
+         ▼                   ▼              ▼               ▼
+    Previous month's   AI suggests    Drafts for      User reviews
+    invoices          journal         review          and approves
+                      entries
+```
+
+### Important Notes
+
+- **All processing runs in Google Cloud** - your laptop can be closed
+- **Chrome runs inside Cloud Run containers** - not on your local machine
+- **Triggers are time-based** - they execute regardless of your device state
+- **Secret Manager** stores OAuth cookies for vendor portal authentication
+
+---
+
 ## Document Type Detection and File Naming
 
 ### Overview
@@ -508,12 +659,14 @@ const emailContext = {
 Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)
 ──────────────   ──────────────     ──────────────      ──────────────     ──────────────
 雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成
-✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        📋 TODO            ✅ COMPLETED
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        🔄 IN PROGRESS     ✅ COMPLETED
 
 ├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet
-├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         ├─ Secret Manager   ├─ Gemini仕訳提案
-└─ Trigger導入   ├─ Drive格納       └─ GAS連携          └─ ホワイトリスト    ├─ ReviewWebApp
-                 └─ 二重処理防止                                            └─ 変更履歴管理
+├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         │  ✅ Aitemasu      ├─ Gemini仕訳提案
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  📋 IBJ           ├─ ReviewWebApp
+                 └─ 二重処理防止                        │  📋 Google Ads    └─ 変更履歴管理
+                                                       ├─ Secret Manager
+                                                       └─ Gemini OCR連携
 ```
 
 ---
@@ -583,22 +736,47 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase
 
 ---
 
-### Phase 3: URLダウンロード（15h）- 📋 TODO
+### Phase 3: URLダウンロード（15h）- 🔄 IN PROGRESS
 
-**Status**: Not started
+**Status**: Aitemasu vendor completed, infrastructure ready
 
-| タスク | 工数 | 状態 | 成果物 |
-|---|---|---|---|
-| URL抽出・vendorKey判定 | 3h | 📋 | UrlExtractor.ts |
-| vendor別ログイン実装（1〜2ベンダー） | 6h | 📋 | vendors/*.ts |
-| Secret Manager連携 | 4h | 📋 | SecretClient.ts |
-| 統合テスト | 2h | 📋 | E2Eテスト |
+#### Phase 3.1: Infrastructure（4h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Cloud Run download service | ✅ | cloud-run/src/routes/download.ts |
+| Vendor registry pattern | ✅ | cloud-run/src/vendors/VendorRegistry.ts |
+| Secret Manager integration | ✅ | cloud-run/src/services/SecretManager.ts |
+| Cookie-based authentication | ✅ | Manual login flow with cookie storage |
+
+#### Phase 3.3: Aitemasu Vendor（6h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Aitemasu browser automation | ✅ | cloud-run/src/vendors/AitemasuVendor.ts |
+| Stripe billing portal navigation | ✅ | Settings → プラン・請求管理 → カスタマーポータル |
+| PDF download via CDP | ✅ | Download capture from Stripe file_url |
+| Gemini OCR integration | ✅ | cloud-run/src/services/GeminiOcrService.ts |
+| GAS VendorInvoiceProcessor | ✅ | src/modules/vendors/VendorInvoiceProcessor.ts |
+| Google Drive upload | ✅ | YYYY-MM-ServiceName-{請求書/領収書}.pdf |
+
+**Supported Flow**:
+```
+GAS downloadAitemasuInvoices()
+    → Cloud Run /download (invoice-ocr service)
+    → Puppeteer: Navigate Aitemasu → Stripe Billing Portal
+    → Download PDF via CDP
+    → Gemini OCR: Extract service name, billing month, document type
+    → Return to GAS with metadata
+    → Upload to Google Drive with proper naming
+```
+
+#### Phase 3.2: IBJ Vendor - 📋 TODO
+#### Phase 3.4: Google Ads Vendor - 📋 TODO
 
 **Use Cases**:
 - Services requiring portal login to download invoices
 - Automated invoice retrieval from vendor dashboards
-
-**Priority**: Low (manual download currently acceptable)
 
 ---
 

@@ -13,6 +13,10 @@ export interface VendorCredentials {
   mfaSecret?: string;
   apiKey?: string;
   accountId?: string;
+  // Cookie-based auth (for OAuth services)
+  cookies?: string;
+  // Chrome profile path (for services requiring existing login session)
+  chromeProfilePath?: string;
 }
 
 /**
@@ -43,6 +47,14 @@ export interface DownloadedFile {
   documentType?: 'invoice' | 'receipt' | 'unknown';
   /** Billing month if detectable (YYYY-MM) */
   billingMonth?: string;
+  /** Service name extracted from OCR */
+  serviceName?: string;
+  /** Suggested filename (YYYY-MM-ServiceName-{請求書|領収書}.pdf) */
+  suggestedFilename?: string;
+  /** OCR confidence score (0-1) */
+  ocrConfidence?: number;
+  /** OCR notes/reasoning */
+  ocrNotes?: string;
 }
 
 /**
