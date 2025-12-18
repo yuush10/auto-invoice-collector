@@ -13,6 +13,10 @@ export interface VendorCredentials {
   mfaSecret?: string;
   apiKey?: string;
   accountId?: string;
+  // Cookie-based auth (for OAuth services)
+  cookies?: string;
+  // Chrome profile path (for services requiring existing login session)
+  chromeProfilePath?: string;
 }
 
 /**

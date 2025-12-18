@@ -21,15 +21,24 @@ const router = Router();
 
 // Browser instance (reused across requests for performance)
 let browserInstance: Browser | null = null;
+let currentProfilePath: string | null = null;
 
 /**
  * Get or create browser instance
+ * @param profilePath Optional Chrome profile path for pre-authenticated sessions
  */
-async function getBrowser(): Promise<Browser> {
+async function getBrowser(profilePath?: string): Promise<Browser> {
+  // If profile path changed or provided, close existing browser
+  if (profilePath && currentProfilePath !== profilePath) {
+    await closeBrowser();
+    currentProfilePath = profilePath;
+  }
+
   if (!browserInstance || !browserInstance.isConnected()) {
     console.log('[Download] Launching browser...');
-    browserInstance = await puppeteer.launch({
-      headless: true,
+
+    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
+      headless: 'new', // Use new headless mode
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -37,8 +46,24 @@ async function getBrowser(): Promise<Browser> {
         '--disable-gpu',
         '--disable-web-security',
         '--disable-features=VizDisplayCompositor',
+        '--disable-background-networking',
+        '--disable-extensions',
+        '--disable-sync',
+        '--disable-default-apps',
       ],
-    });
+    };
+
+    // Use Chrome profile if provided (for OAuth-based services)
+    if (profilePath) {
+      console.log(`[Download] Using Chrome profile: ${profilePath}`);
+      launchOptions.userDataDir = profilePath;
+      // Use system Chrome instead of Puppeteer's bundled Chromium for profile compatibility
+      launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      launchOptions.headless = false; // System Chrome with profile works better non-headless
+      console.log('[Download] Using system Chrome for profile compatibility');
+    }
+
+    browserInstance = await puppeteer.launch(launchOptions);
   }
   return browserInstance;
 }
@@ -151,9 +176,10 @@ router.post('/download', async (req: Request, res: Response) => {
 
   // Execute vendor automation
   let page: Page | null = null;
+  const useProfileAuth = !!credentials.chromeProfilePath;
 
   try {
-    const browser = await getBrowser();
+    const browser = await getBrowser(credentials.chromeProfilePath);
     page = await browser.newPage();
 
     // Set viewport and user agent
@@ -162,27 +188,103 @@ router.post('/download', async (req: Request, res: Response) => {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // Navigate to login page
-    log(`Navigating to login page: ${vendor.loginUrl}`);
-    await page.goto(vendor.loginUrl, {
-      waitUntil: 'networkidle0',
-      timeout: 30000,
-    });
+    if (useProfileAuth) {
+      // Chrome profile auth: navigate to login page first to trigger OAuth redirect if needed
+      log('Using Chrome profile authentication');
 
-    // Take screenshot before login
-    const loginScreenshot = await page.screenshot({ encoding: 'base64' });
-    screenshots.push(loginScreenshot as string);
+      // Navigate to login page with retry logic
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          log(`Navigation attempt ${attempt} to login page...`);
+          await page.goto(vendor.loginUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+          });
+          // Wait for OAuth redirect or page load
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          log('Navigation successful');
+          break;
+        } catch (navError) {
+          log(`Navigation attempt ${attempt} failed: ${(navError as Error).message}`);
+          if (attempt === 3) {
+            throw navError;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
 
-    // Perform login
-    log('Performing login...');
-    await vendor.login(page, credentials);
+      // Check current URL - if redirected away from login, we're logged in
+      const currentUrl = page.url();
+      log(`Current URL after login page: ${currentUrl}`);
 
-    // Verify login success
-    const isLoggedIn = await vendor.isLoggedIn(page);
-    if (!isLoggedIn) {
-      throw new Error('Login verification failed');
+      // Take screenshot to verify state
+      const initialScreenshot = await page.screenshot({ encoding: 'base64' });
+      screenshots.push(initialScreenshot as string);
+
+      // Check if we're on a login/index page and need to click Google login
+      if (currentUrl.includes('/index') || currentUrl.includes('/login')) {
+        log('On login page, looking for Google login button...');
+
+        // Look for Google login button
+        const googleButtonSelectors = [
+          'button[class*="google"]',
+          'a[class*="google"]',
+          'button[class*="social"]',
+          'a[href*="google"]',
+          '[class*="sign"] button',
+          'button[class*="btn"]',
+        ];
+
+        for (const selector of googleButtonSelectors) {
+          try {
+            const button = await page.$(selector);
+            if (button) {
+              log(`Found Google login button with selector: ${selector}`);
+              await button.click();
+              // Wait for OAuth redirect to complete
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              log(`Current URL after clicking: ${page.url()}`);
+
+              // Take screenshot after clicking
+              const afterClickScreenshot = await page.screenshot({ encoding: 'base64' });
+              screenshots.push(afterClickScreenshot as string);
+              break;
+            }
+          } catch (err) {
+            // Continue trying other selectors
+          }
+        }
+      }
+
+      // Verify login success
+      const isLoggedIn = await vendor.isLoggedIn(page);
+      if (!isLoggedIn) {
+        throw new Error('Chrome profile not logged in. Please login manually in Chrome first.');
+      }
+      log('Chrome profile authentication successful');
+    } else {
+      // Standard login flow
+      log(`Navigating to login page: ${vendor.loginUrl}`);
+      await page.goto(vendor.loginUrl, {
+        waitUntil: 'networkidle0',
+        timeout: 30000,
+      });
+
+      // Take screenshot before login
+      const loginScreenshot = await page.screenshot({ encoding: 'base64' });
+      screenshots.push(loginScreenshot as string);
+
+      // Perform login
+      log('Performing login...');
+      await vendor.login(page, credentials);
+
+      // Verify login success
+      const isLoggedIn = await vendor.isLoggedIn(page);
+      if (!isLoggedIn) {
+        throw new Error('Login verification failed');
+      }
+      log('Login successful');
     }
-    log('Login successful');
 
     // Take screenshot after login
     const afterLoginScreenshot = await page.screenshot({ encoding: 'base64' });

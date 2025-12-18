@@ -5,34 +5,49 @@
  * Portal Information:
  * - Login URL: https://app.aitemasu.me/login
  * - Settings/Plan URL: https://app.aitemasu.me/settings/plan
+ *
+ * Authentication:
+ * - Aitemasu uses Google OAuth (no username/password)
+ * - Use cookie-based authentication by storing session cookies
+ * - Credentials format: { cookies: "[{...cookie JSON...}]" }
  */
-import { Page } from 'puppeteer';
+import { Page, Protocol } from 'puppeteer';
 import { BaseVendor } from './BaseVendor';
 import { VendorCredentials, DownloadOptions, DownloadedFile } from './types';
+
+/**
+ * Extended credentials for cookie-based auth
+ */
+interface AitemasuCredentials extends VendorCredentials {
+  /** JSON string of cookies from a manual login session */
+  cookies?: string;
+}
 
 /**
  * Aitemasu-specific selectors
  * These may need adjustment based on actual page structure
  */
 const SELECTORS = {
-  // Login page selectors
+  // Login page selectors (standard CSS only - no Playwright :has-text())
   emailInput: 'input[type="email"], input[name="email"], input[placeholder*="メール"], input[placeholder*="mail"]',
   passwordInput: 'input[type="password"], input[name="password"]',
-  loginButton: 'button[type="submit"], button:has-text("ログイン"), button:has-text("Login"), input[type="submit"]',
+  loginButton: 'button[type="submit"], input[type="submit"]',
+  // Google OAuth login button (green button with Google icon)
+  googleLoginButton: 'button[class*="google"], a[class*="google"], button[class*="social"], a[href*="google"], [class*="login"] button',
 
   // Post-login indicators
   dashboardIndicator: '[class*="dashboard"], [class*="home"], nav, .sidebar, header[class*="app"]',
   userMenu: '[class*="user"], [class*="avatar"], [class*="profile"]',
 
   // Settings/Billing page selectors
-  settingsLink: 'a[href*="settings"], a:has-text("設定"), a:has-text("Settings")',
-  planLink: 'a[href*="plan"], a[href*="billing"], a:has-text("プラン"), a:has-text("Plan")',
+  settingsLink: 'a[href*="settings"]',
+  planLink: 'a[href*="plan"], a[href*="billing"]',
   invoiceSection: '[class*="invoice"], [class*="billing"], [class*="payment"]',
 
-  // Invoice download selectors
+  // Invoice download selectors (standard CSS only)
   invoiceList: '[class*="invoice-list"], [class*="billing-history"], table tbody tr',
   invoiceRow: 'tr, [class*="invoice-item"], [class*="billing-row"]',
-  downloadButton: 'a[href*=".pdf"], a[download], button:has-text("ダウンロード"), button:has-text("Download"), a:has-text("PDF")',
+  downloadButton: 'a[href*=".pdf"], a[download]',
   invoiceLink: 'a[href*="invoice"], a[href*="receipt"], a[href*="billing"]',
 };
 
@@ -42,15 +57,65 @@ const SELECTORS = {
 export class AitemasuVendor extends BaseVendor {
   vendorKey = 'aitemasu';
   vendorName = 'Aitemasu';
-  loginUrl = 'https://app.aitemasu.me/login';
+  loginUrl = 'https://app.aitemasu.me/index';
 
-  private readonly billingUrl = 'https://app.aitemasu.me/settings/plan';
+  private readonly billingUrl = 'https://app.aitemasu.me/settings';
 
   /**
    * Login to Aitemasu portal
+   *
+   * Aitemasu uses Google OAuth, so we support two authentication methods:
+   * 1. Cookie-based: Provide cookies from a manual login session
+   * 2. Username/password: For future compatibility if they add direct login
    */
   async login(page: Page, credentials: VendorCredentials): Promise<void> {
-    this.log('Starting login process');
+    const aitemasuCreds = credentials as AitemasuCredentials;
+
+    // Check if cookies are provided (preferred method for OAuth)
+    if (aitemasuCreds.cookies) {
+      await this.loginWithCookies(page, aitemasuCreds.cookies);
+      return;
+    }
+
+    // Fall back to username/password if no cookies (may not work with OAuth)
+    this.log('Warning: Aitemasu uses Google OAuth. Cookie-based auth is recommended.');
+    await this.loginWithCredentials(page, credentials);
+  }
+
+  /**
+   * Login using stored session cookies
+   * This is the recommended method for OAuth-based services
+   */
+  private async loginWithCookies(page: Page, cookiesJson: string): Promise<void> {
+    this.log('Starting cookie-based login');
+
+    try {
+      // Parse cookies from JSON string
+      const cookies: Protocol.Network.CookieParam[] = JSON.parse(cookiesJson);
+      this.log(`Setting ${cookies.length} cookies`);
+
+      // Set cookies before navigation
+      await page.setCookie(...cookies);
+
+      // Navigate to the app (should be logged in with cookies)
+      await this.navigateTo(page, 'https://app.aitemasu.me');
+      await this.waitForSpaLoad(page);
+
+      // Take screenshot to verify login
+      await this.takeScreenshot(page, 'after-cookie-login');
+
+      this.log('Cookie-based login completed');
+    } catch (error) {
+      this.log(`Cookie parsing failed: ${error}`, 'error');
+      throw new Error(`Failed to parse cookies: ${error}`);
+    }
+  }
+
+  /**
+   * Login using username/password (fallback, may not work with OAuth)
+   */
+  private async loginWithCredentials(page: Page, credentials: VendorCredentials): Promise<void> {
+    this.log('Starting credential-based login');
 
     // Navigate to login page
     await this.navigateTo(page, this.loginUrl);
@@ -65,7 +130,7 @@ export class AitemasuVendor extends BaseVendor {
     this.log('Filling email field');
     const emailSelector = await this.findSelector(page, SELECTORS.emailInput);
     if (!emailSelector) {
-      throw new Error('Could not find email input field');
+      throw new Error('Could not find email input field. Aitemasu may require OAuth - use cookie-based auth instead.');
     }
     await this.typeWithDelay(page, emailSelector, credentials.username);
 
@@ -73,7 +138,7 @@ export class AitemasuVendor extends BaseVendor {
     this.log('Filling password field');
     const passwordSelector = await this.findSelector(page, SELECTORS.passwordInput);
     if (!passwordSelector) {
-      throw new Error('Could not find password input field');
+      throw new Error('Could not find password input field. Aitemasu may require OAuth - use cookie-based auth instead.');
     }
     await this.typeWithDelay(page, passwordSelector, credentials.password);
 
@@ -103,7 +168,7 @@ export class AitemasuVendor extends BaseVendor {
     // Take screenshot after login attempt
     await this.takeScreenshot(page, 'after-login');
 
-    this.log('Login process completed');
+    this.log('Credential-based login completed');
   }
 
   /**
@@ -150,11 +215,11 @@ export class AitemasuVendor extends BaseVendor {
     await this.navigateTo(page, this.billingUrl);
     await this.waitForSpaLoad(page);
 
-    // Check if we're on the billing page
+    // Check if we're on the settings page
     const currentUrl = page.url();
-    if (currentUrl.includes('settings') || currentUrl.includes('plan') || currentUrl.includes('billing')) {
-      this.log('Successfully navigated to billing section');
-      await this.takeScreenshot(page, 'billing-page');
+    if (currentUrl.includes('settings')) {
+      this.log('Successfully navigated to settings section');
+      await this.takeScreenshot(page, 'settings-page');
       return;
     }
 
