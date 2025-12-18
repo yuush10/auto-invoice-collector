@@ -1437,6 +1437,97 @@ function downloadAitemasuInvoices(): void {
 }
 (globalThis as any).downloadAitemasuInvoices = downloadAitemasuInvoices;
 
+/**
+ * Process all configured vendor invoices
+ * This is called by the monthly trigger
+ */
+function processAllVendorInvoices(): void {
+  processAllVendorInvoicesAsync();
+}
+
+async function processAllVendorInvoicesAsync(): Promise<void> {
+  AppLogger.info('[Vendor] Starting monthly vendor invoice processing');
+
+  // List of vendors to process automatically
+  // Note: Only enable vendors that have been fully tested
+  const enabledVendors = ['aitemasu']; // Add more as they become ready: 'ibj', 'google-ads'
+
+  const results: Array<{ vendor: string; result: string }> = [];
+
+  for (const vendorKey of enabledVendors) {
+    try {
+      AppLogger.info(`[Vendor] Processing vendor: ${vendorKey}`);
+      const result = downloadVendorInvoices(vendorKey);
+      const parsed = JSON.parse(result);
+
+      if (parsed.success) {
+        const data = parsed.data;
+        results.push({
+          vendor: vendorKey,
+          result: `Success: ${data.filesUploaded?.length || 0} files uploaded`
+        });
+      } else {
+        results.push({
+          vendor: vendorKey,
+          result: `Failed: ${parsed.error}`
+        });
+      }
+    } catch (error) {
+      AppLogger.error(`[Vendor] Error processing ${vendorKey}`, error as Error);
+      results.push({
+        vendor: vendorKey,
+        result: `Error: ${(error as Error).message}`
+      });
+    }
+  }
+
+  // Log summary
+  AppLogger.info('[Vendor] Monthly vendor processing complete');
+  for (const r of results) {
+    AppLogger.info(`[Vendor] ${r.vendor}: ${r.result}`);
+    Logger.log(`${r.vendor}: ${r.result}`);
+  }
+
+  // Send notification email with results
+  try {
+    const summary = results.map(r => `• ${r.vendor}: ${r.result}`).join('\n');
+    MailApp.sendEmail({
+      to: Config.getAdminEmail(),
+      subject: '[Auto Invoice Collector] Monthly Vendor Invoice Processing Complete',
+      body: `月次ベンダー請求書処理が完了しました。\n\n処理結果:\n${summary}`
+    });
+  } catch (error) {
+    AppLogger.error('[Vendor] Failed to send notification', error as Error);
+  }
+}
+(globalThis as any).processAllVendorInvoices = processAllVendorInvoices;
+
+/**
+ * Setup monthly trigger for vendor invoice downloads
+ * Run this once to set up automatic monthly vendor processing
+ * Runs on the 3rd of each month at 10 AM JST
+ * (Earlier than journal processing on the 5th)
+ */
+function setupMonthlyVendorTrigger(): void {
+  // Remove existing triggers for processAllVendorInvoices function only
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'processAllVendorInvoices') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new monthly trigger on the 3rd at 10 AM
+  ScriptApp.newTrigger('processAllVendorInvoices')
+    .timeBased()
+    .onMonthDay(3)
+    .atHour(10)
+    .create();
+
+  Logger.log('Monthly vendor trigger created successfully (3rd of each month at 10 AM)');
+}
+(globalThis as any).setupMonthlyVendorTrigger = setupMonthlyVendorTrigger;
+
 // Debug function to diagnose data issues
 function debugDraftData(): void {
   const spreadsheetId = Config.getLogSheetId();

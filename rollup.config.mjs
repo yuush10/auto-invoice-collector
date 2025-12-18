@@ -171,6 +171,14 @@ function downloadVendorInvoices(vendorKey, optionsJson) {
 function downloadAitemasuInvoices() {
   return globalThis.downloadAitemasuInvoices();
 }
+
+function processAllVendorInvoices() {
+  return globalThis.processAllVendorInvoices();
+}
+
+function setupMonthlyVendorTrigger() {
+  return globalThis.setupMonthlyVendorTrigger();
+}
 `
   },
   plugins: [
