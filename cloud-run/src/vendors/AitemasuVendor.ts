@@ -207,118 +207,422 @@ export class AitemasuVendor extends BaseVendor {
 
   /**
    * Navigate to the invoices/billing section
+   * Flow: Settings → プラン・請求管理 → カスタマーポータル → カスタマーポータルに移動
    */
   async navigateToInvoices(page: Page): Promise<void> {
     this.log('Navigating to billing section');
 
-    // Try direct navigation to billing URL first
+    // Step 1: Navigate to settings page
     await this.navigateTo(page, this.billingUrl);
     await this.waitForSpaLoad(page);
+    await this.takeScreenshot(page, 'settings-page');
 
-    // Check if we're on the settings page
-    const currentUrl = page.url();
-    if (currentUrl.includes('settings')) {
-      this.log('Successfully navigated to settings section');
-      await this.takeScreenshot(page, 'settings-page');
-      return;
+    // Step 2: Click on "プラン・請求管理" in app-settings
+    this.log('Step 2: Looking for プラン・請求管理 in app-settings...');
+    const foundPlanLink = await page.evaluate(`
+      (function() {
+        var container = document.querySelector('app-settings');
+        if (!container) return false;
+        var items = container.querySelectorAll('ion-item');
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].textContent && items[i].textContent.includes('プラン・請求管理')) {
+            items[i].click();
+            return true;
+          }
+        }
+        return false;
+      })()
+    `);
+
+    if (foundPlanLink) {
+      this.log('Found and clicked プラン・請求管理');
+      await this.wait(2000);
+      await this.waitForSpaLoad(page);
+      await this.takeScreenshot(page, 'plan-billing-page');
+    } else {
+      this.log('Could not find プラン・請求管理 in app-settings');
     }
 
-    // If direct navigation failed, try clicking through settings
-    this.log('Direct navigation failed, trying menu navigation');
+    // Step 3: Click on "カスタマーポータル" button in app-plan
+    this.log('Step 3: Looking for カスタマーポータル button in app-plan...');
 
-    const settingsLink = await this.findSelector(page, SELECTORS.settingsLink);
-    if (settingsLink) {
-      await page.click(settingsLink);
-      await this.wait(1500);
+    // Debug: Check if app-plan exists
+    const appPlanExists = await page.evaluate(`!!document.querySelector('app-plan')`);
+    this.log(`app-plan exists: ${appPlanExists}`);
+
+    // Debug: List all buttons/items in app-plan
+    const buttonsInPlan = await page.evaluate(`
+      (function() {
+        var container = document.querySelector('app-plan');
+        if (!container) return [];
+        var buttons = container.querySelectorAll('ion-button, ion-item');
+        return Array.from(buttons).map(function(b) { return b.textContent.trim().substring(0, 50); });
+      })()
+    `) as string[];
+    this.log(`Buttons in app-plan: ${JSON.stringify(buttonsInPlan)}`);
+
+    const foundPortalButton = await page.evaluate(`
+      (function() {
+        var container = document.querySelector('app-plan');
+        if (!container) return false;
+        // Look specifically for ion-button with カスタマーポータル (not the description text)
+        var buttons = container.querySelectorAll('ion-button');
+        for (var i = 0; i < buttons.length; i++) {
+          var text = buttons[i].textContent.trim();
+          // Match button that is exactly or primarily "カスタマーポータル"
+          if (text === 'カスタマーポータル' || text.endsWith('カスタマーポータル')) {
+            console.log('Clicking button:', text);
+            buttons[i].click();
+            return text;
+          }
+        }
+        return false;
+      })()
+    `);
+
+    if (foundPortalButton) {
+      this.log('Found and clicked カスタマーポータル button');
+      await this.wait(3000); // Wait longer for modal to appear
+      await this.waitForSpaLoad(page);
+      await this.takeScreenshot(page, 'after-portal-click');
+    } else {
+      this.log('Could not find カスタマーポータル button in app-plan');
     }
 
-    const planLink = await this.findSelector(page, SELECTORS.planLink);
-    if (planLink) {
-      await page.click(planLink);
-      await this.wait(1500);
+    // Step 4: Click on "カスタマーポータルに移動" in the modal
+    this.log('Step 4: Looking for カスタマーポータルに移動 in modal...');
+
+    // Debug: Check if modal exists
+    const modalExists = await page.evaluate(`!!document.querySelector('app-customer-portal-modal')`);
+    this.log(`app-customer-portal-modal exists: ${modalExists}`);
+
+    // Debug: List all ion-buttons on page
+    const allButtons = await page.evaluate(`
+      (function() {
+        var buttons = document.querySelectorAll('ion-button');
+        return Array.from(buttons).map(function(b) { return b.textContent.trim().substring(0, 50); });
+      })()
+    `) as string[];
+    this.log(`All ion-buttons on page: ${JSON.stringify(allButtons)}`);
+
+    // Set up a listener for new pages BEFORE clicking the button
+    const browser = page.browser();
+    let newPagePromise: Promise<Page> | null = null;
+
+    if (browser) {
+      newPagePromise = new Promise<Page>((resolve) => {
+        const handler = (target: any) => {
+          if (target.type() === 'page') {
+            browser.off('targetcreated', handler);
+            target.page().then(resolve);
+          }
+        };
+        browser.on('targetcreated', handler);
+        // Timeout after 15 seconds
+        setTimeout(() => {
+          browser.off('targetcreated', handler);
+          resolve(null as any);
+        }, 15000);
+      });
     }
 
-    await this.takeScreenshot(page, 'billing-page');
+    // Find the button element (don't click yet)
+    let foundModalButton = false;
+
+    // Try to find the button in modal using XPath for text matching
+    const buttonHandle = await page.evaluateHandle(`
+      (function() {
+        // First try in modal
+        var modal = document.querySelector('app-customer-portal-modal');
+        if (modal) {
+          var buttons = modal.querySelectorAll('ion-button');
+          for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].textContent && buttons[i].textContent.includes('カスタマーポータルに移動')) {
+              return buttons[i];
+            }
+          }
+        }
+        // Fallback: try any button on page
+        var allBtns = document.querySelectorAll('ion-button');
+        for (var i = 0; i < allBtns.length; i++) {
+          if (allBtns[i].textContent && allBtns[i].textContent.includes('カスタマーポータルに移動')) {
+            return allBtns[i];
+          }
+        }
+        return null;
+      })()
+    `);
+
+    if (buttonHandle) {
+      const element = buttonHandle.asElement();
+      if (element) {
+        this.log('Found カスタマーポータルに移動 button, clicking with Puppeteer...');
+        // Use Puppeteer's click method which handles popups better
+        await element.click();
+        foundModalButton = true;
+      }
+    }
+
+    if (foundModalButton) {
+      this.log(`Found and clicked カスタマーポータルに移動 (from ${foundModalButton})`);
+      this.log('Waiting for Stripe billing portal...');
+
+      const originalUrl = page.url();
+
+      // First, wait for any new tab to be created (with short timeout)
+      let newPage: Page | null = null;
+      if (newPagePromise) {
+        try {
+          const result = await Promise.race([
+            newPagePromise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+          ]);
+          newPage = result as Page | null;
+        } catch {
+          // Ignore errors
+        }
+      }
+
+      if (newPage) {
+        this.log(`New tab detected, waiting for it to load...`);
+
+        // Wait for the new page to finish loading
+        try {
+          await newPage.waitForNavigation({ waitUntil: 'networkidle0', timeout: 20000 });
+        } catch {
+          // Navigation might have already completed
+        }
+
+        const newUrl = newPage.url();
+        this.log(`New tab loaded: ${newUrl}`);
+
+        if (newUrl && newUrl !== 'about:blank') {
+          await newPage.bringToFront();
+          await this.wait(2000);
+          await this.takeScreenshot(newPage, 'billing-portal-new-tab');
+          (this as any)._billingPortalPage = newPage;
+        }
+      } else {
+        // No new tab - check if the page navigated in the same window
+        this.log('No new tab detected, waiting for navigation in current page...');
+
+        try {
+          // Wait for navigation in the current page
+          await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 });
+        } catch {
+          // Navigation might not happen if it's an iframe or popup
+        }
+
+        await this.wait(3000);
+        const currentUrl = page.url();
+        this.log(`Current URL after wait: ${currentUrl}`);
+
+        if (currentUrl !== originalUrl) {
+          this.log(`Page navigated to: ${currentUrl}`);
+          await this.takeScreenshot(page, 'billing-portal-same-tab');
+        } else {
+          // Check if there's an iframe with Stripe content
+          this.log('URL did not change, checking for iframes...');
+          const frameUrls = await page.evaluate(`
+            (function() {
+              var frames = document.querySelectorAll('iframe');
+              return Array.from(frames).map(function(f) { return f.src; });
+            })()
+          `) as string[];
+          this.log(`Iframes on page: ${JSON.stringify(frameUrls)}`);
+        }
+      }
+    } else {
+      this.log('Could not find カスタマーポータルに移動 button');
+      await this.takeScreenshot(page, 'modal-not-found');
+    }
+
     this.log('Navigation to billing section completed');
+    this.log(`Current URL: ${page.url()}`);
   }
 
   /**
-   * Download invoices from the billing section
+   * Download invoices from the billing section (Stripe Customer Portal)
    */
   async downloadInvoices(page: Page, options?: DownloadOptions): Promise<DownloadedFile[]> {
-    this.log('Starting invoice download');
+    this.log('Starting invoice download from billing portal');
     const files: DownloadedFile[] = [];
 
-    // Take screenshot of billing page
-    await this.takeScreenshot(page, 'before-download');
+    // Use the billing portal page if it was opened in a new tab
+    const billingPage = (this as any)._billingPortalPage || page;
+    this.log(`Using page with URL: ${billingPage.url()}`);
 
-    // Try to find invoice section
-    const invoiceSection = await this.findSelector(page, SELECTORS.invoiceSection);
-    if (invoiceSection) {
-      this.log('Found invoice section');
-    }
+    // Take screenshot of billing portal
+    await this.takeScreenshot(billingPage, 'before-download');
 
-    // Look for direct PDF download links
-    const pdfLinks = await page.$$('a[href*=".pdf"], a[download]');
-    this.log(`Found ${pdfLinks.length} potential PDF links`);
+    // Step 5: Click on the first invoice row using data-testid
+    this.log('Step 5: Looking for invoice rows with data-testid="billing-portal-invoice-row"...');
+    const invoiceRows = await billingPage.$$('[data-testid="billing-portal-invoice-row"]');
+    this.log(`Found ${invoiceRows.length} invoice rows`);
 
-    for (const link of pdfLinks) {
-      try {
-        const href = await link.evaluate(el => el.getAttribute('href'));
-        const text = await link.evaluate(el => el.textContent);
+    if (invoiceRows.length > 0) {
+      // Click on the first invoice row to open invoice details
+      this.log('Clicking on first invoice row...');
+      await invoiceRows[0].click();
+      await this.wait(3000);
+      await this.waitForSpaLoad(billingPage);
+      await this.takeScreenshot(billingPage, 'invoice-detail');
 
-        if (href) {
-          this.log(`Attempting to download: ${href}`);
+      // Look for invoice links (invoice.stripe.com URLs)
+      this.log('Looking for invoice links...');
+      const invoiceLinks = await billingPage.$$('a[href*="invoice.stripe.com"]');
+      this.log(`Found ${invoiceLinks.length} invoice links`);
 
-          // Intercept the download
-          const file = await this.interceptDownload(page, async () => {
-            await link.click();
-          });
+      if (invoiceLinks.length > 0) {
+        // Get the first invoice URL and navigate to it
+        const invoiceUrl = await invoiceLinks[0].evaluate((el: any) => el.getAttribute('href'));
+        this.log(`Navigating to invoice page: ${invoiceUrl}`);
+        await billingPage.goto(invoiceUrl, { waitUntil: 'networkidle0' });
+        await this.wait(2000);
+        await this.takeScreenshot(billingPage, 'invoice-page');
+
+        // Look for the download button (請求書をダウンロード or 領収書をダウンロード)
+        this.log('Looking for download button on invoice page...');
+        const downloadButton = await billingPage.$('[data-testid="download-invoice-receipt-pdf-button"]');
+
+        if (downloadButton) {
+          this.log('Found download button, clicking...');
+
+          // Intercept the response - clicking returns JSON with file_url
+          const file = await this.interceptDownload(billingPage, async () => {
+            await downloadButton.click();
+          }, { timeout: 10000 });
 
           if (file) {
-            file.documentType = this.detectDocumentType(file.filename);
-            file.billingMonth = this.extractBillingMonth(text || file.filename);
-            files.push(file);
-            this.log(`Downloaded: ${file.filename}`);
-          }
-        }
-      } catch (error) {
-        this.log(`Error downloading file: ${error}`, 'warn');
-      }
+            // Check if the "file" is actually JSON with file_url
+            try {
+              const content = Buffer.from(file.base64, 'base64').toString('utf-8');
+              if (content.startsWith('{') && content.includes('file_url')) {
+                const json = JSON.parse(content);
+                if (json.file_url) {
+                  this.log(`Response contains file_url: ${json.file_url}`);
 
-      // Apply limit if specified
-      if (options?.limit && files.length >= options.limit) {
-        this.log(`Reached download limit of ${options.limit}`);
-        break;
+                  // Set up CDP to capture the downloaded file
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const os = await import('os');
+
+                  // Create temp download directory
+                  const downloadDir = path.join(os.tmpdir(), `aitemasu-download-${Date.now()}`);
+                  fs.mkdirSync(downloadDir, { recursive: true });
+
+                  // Get CDP session
+                  const client = await billingPage.createCDPSession();
+
+                  // Set download behavior to save files
+                  await client.send('Page.setDownloadBehavior', {
+                    behavior: 'allow',
+                    downloadPath: downloadDir,
+                  });
+
+                  this.log(`Download directory: ${downloadDir}`);
+
+                  // Navigate to the PDF URL - this will trigger download
+                  try {
+                    await billingPage.goto(json.file_url, { timeout: 30000 });
+                  } catch {
+                    // Navigation might be aborted when download starts - that's expected
+                  }
+
+                  // Wait for download to complete
+                  await this.wait(5000);
+
+                  // Check if file was downloaded
+                  const files_in_dir = fs.readdirSync(downloadDir);
+                  this.log(`Files in download dir: ${JSON.stringify(files_in_dir)}`);
+
+                  if (files_in_dir.length > 0) {
+                    const downloadedFile = files_in_dir[0];
+                    const filePath = path.join(downloadDir, downloadedFile);
+                    const buffer = fs.readFileSync(filePath);
+                    const base64 = buffer.toString('base64');
+
+                    // Generate a proper filename
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    files.push({
+                      filename: `aitemasu-invoice-${dateStr}.pdf`,
+                      base64,
+                      mimeType: 'application/pdf',
+                      documentType: 'invoice',
+                      fileSize: buffer.length,
+                    });
+                    this.log(`Downloaded PDF: aitemasu-invoice-${dateStr}.pdf (${buffer.length} bytes)`);
+
+                    // Cleanup
+                    fs.unlinkSync(filePath);
+                    fs.rmdirSync(downloadDir);
+                  } else {
+                    this.log('No file found in download directory');
+                    // Cleanup
+                    fs.rmdirSync(downloadDir);
+                  }
+                }
+                // Don't fall through to add the JSON response as a file
+              } else {
+                // It's a direct PDF download
+                file.documentType = 'invoice';
+                files.push(file);
+                this.log(`Downloaded: ${file.filename}`);
+              }
+            } catch (error) {
+              this.log(`Error processing download response: ${error}`, 'warn');
+              // If parsing fails, assume it's a PDF
+              file.documentType = 'invoice';
+              files.push(file);
+              this.log(`Downloaded (fallback): ${file.filename}`);
+            }
+          } else {
+            this.log('Download interception failed');
+          }
+        } else {
+          this.log('Download button not found, listing all buttons...');
+          const allButtons = await billingPage.evaluate(`
+            (function() {
+              var buttons = document.querySelectorAll('button');
+              return Array.from(buttons).map(function(b) {
+                return { text: b.textContent.trim().substring(0, 50), testid: b.getAttribute('data-testid') };
+              });
+            })()
+          `) as Array<{ text: string; testid: string | null }>;
+          this.log(`All buttons on invoice page: ${JSON.stringify(allButtons)}`);
+        }
       }
     }
 
-    // If no PDF links found, look for invoice rows with download buttons
+    // If no files downloaded yet, try looking for direct PDF links on the page
     if (files.length === 0) {
-      this.log('No direct PDF links found, looking for invoice rows');
+      this.log('No invoice downloaded from row, looking for direct PDF links...');
 
-      const invoiceRows = await page.$$(SELECTORS.invoiceRow);
-      this.log(`Found ${invoiceRows.length} invoice rows`);
+      const pdfLinks = await billingPage.$$('a[href*=".pdf"], a[download]');
+      this.log(`Found ${pdfLinks.length} direct PDF links`);
 
-      for (const row of invoiceRows) {
+      for (const link of pdfLinks) {
         try {
-          const downloadBtn = await row.$(SELECTORS.downloadButton);
-          if (downloadBtn) {
-            const file = await this.interceptDownload(page, async () => {
-              await downloadBtn.click();
+          const href = await link.evaluate((el: any) => el.getAttribute('href'));
+          const text = await link.evaluate((el: any) => el.textContent);
+
+          if (href) {
+            this.log(`Attempting to download: ${href}`);
+
+            const file = await this.interceptDownload(billingPage, async () => {
+              await link.click();
             });
 
             if (file) {
-              // Try to extract date from row
-              const rowText = await row.evaluate(el => el.textContent);
               file.documentType = this.detectDocumentType(file.filename);
-              file.billingMonth = this.extractBillingMonth(rowText || file.filename);
+              file.billingMonth = this.extractBillingMonth(text || file.filename);
               files.push(file);
               this.log(`Downloaded: ${file.filename}`);
+              break; // Just download first one
             }
           }
         } catch (error) {
-          this.log(`Error processing invoice row: ${error}`, 'warn');
+          this.log(`Error downloading file: ${error}`, 'warn');
         }
 
         if (options?.limit && files.length >= options.limit) {
@@ -332,7 +636,7 @@ export class AitemasuVendor extends BaseVendor {
       this.log('No downloadable invoices found, capturing page as PDF');
 
       try {
-        const pagePdf = await this.pageToPdf(page);
+        const pagePdf = await this.pageToPdf(billingPage);
         pagePdf.filename = `aitemasu-billing-${new Date().toISOString().slice(0, 10)}.pdf`;
         pagePdf.documentType = 'invoice';
         files.push(pagePdf);

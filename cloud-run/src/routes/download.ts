@@ -1,9 +1,12 @@
 /**
  * Download route for vendor invoice automation
  * POST /download - Download invoices from a vendor portal
+ * POST /download/login - Manual login for OAuth services (headful mode)
  */
 import { Router, Request, Response } from 'express';
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser, Page, Protocol } from 'puppeteer';
+import * as fs from 'fs';
+import * as path from 'path';
 // Import vendors module to trigger vendor registration
 import '../vendors';
 
@@ -23,22 +26,85 @@ const router = Router();
 let browserInstance: Browser | null = null;
 let currentProfilePath: string | null = null;
 
+// Cookie storage directory
+const COOKIE_DIR = process.env.COOKIE_DIR || '/tmp/vendor-cookies';
+
+/**
+ * Get cookie file path for a vendor
+ */
+function getCookieFilePath(vendorKey: string): string {
+  return path.join(COOKIE_DIR, `${vendorKey}-cookies.json`);
+}
+
+/**
+ * Save cookies for a vendor
+ */
+async function saveCookies(vendorKey: string, cookies: Protocol.Network.Cookie[]): Promise<void> {
+  // Ensure directory exists
+  if (!fs.existsSync(COOKIE_DIR)) {
+    fs.mkdirSync(COOKIE_DIR, { recursive: true });
+  }
+  const filePath = getCookieFilePath(vendorKey);
+  fs.writeFileSync(filePath, JSON.stringify(cookies, null, 2));
+  console.log(`[Download] Saved ${cookies.length} cookies for ${vendorKey}`);
+}
+
+/**
+ * Auth data structure (cookies + localStorage)
+ */
+interface AuthData {
+  cookies: Protocol.Network.Cookie[];
+  localStorage?: Record<string, string>;
+}
+
+/**
+ * Load auth data for a vendor
+ */
+function loadAuthData(vendorKey: string): AuthData | null {
+  const filePath = getCookieFilePath(vendorKey);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const data = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(data);
+
+    // Handle both old format (array of cookies) and new format (object with cookies + localStorage)
+    if (Array.isArray(parsed)) {
+      console.log(`[Download] Loaded ${parsed.length} cookies for ${vendorKey} (legacy format)`);
+      return { cookies: parsed };
+    } else {
+      console.log(`[Download] Loaded ${parsed.cookies?.length || 0} cookies and ${Object.keys(parsed.localStorage || {}).length} localStorage items for ${vendorKey}`);
+      return parsed as AuthData;
+    }
+  } catch (error) {
+    console.log(`[Download] Failed to load auth data: ${error}`);
+    return null;
+  }
+}
+
 /**
  * Get or create browser instance
  * @param profilePath Optional Chrome profile path for pre-authenticated sessions
  */
-async function getBrowser(profilePath?: string): Promise<Browser> {
+async function getBrowser(profilePath?: string, demoMode = false): Promise<Browser> {
   // If profile path changed or provided, close existing browser
   if (profilePath && currentProfilePath !== profilePath) {
     await closeBrowser();
     currentProfilePath = profilePath;
   }
 
+  // For demo mode, always create a new browser in headful mode
+  if (demoMode) {
+    await closeBrowser();
+  }
+
   if (!browserInstance || !browserInstance.isConnected()) {
     console.log('[Download] Launching browser...');
 
     const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
-      headless: 'new', // Use new headless mode
+      headless: demoMode ? false : 'new', // Headful for demo mode
+      protocolTimeout: 120000, // 2 minutes for CDP operations
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -53,14 +119,30 @@ async function getBrowser(profilePath?: string): Promise<Browser> {
       ],
     };
 
+    // Demo mode: smaller window
+    if (demoMode) {
+      launchOptions.args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--window-size=1200,800',
+        '--window-position=100,100',
+      ];
+      launchOptions.defaultViewport = { width: 1200, height: 800 };
+      console.log('[Download] Demo mode: using headful browser');
+    }
+
+    // On macOS, use system Chrome to avoid Rosetta/Chromium compatibility issues
+    if (process.platform === 'darwin') {
+      launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      console.log('[Download] Using system Chrome on macOS');
+    }
+
     // Use Chrome profile if provided (for OAuth-based services)
     if (profilePath) {
       console.log(`[Download] Using Chrome profile: ${profilePath}`);
       launchOptions.userDataDir = profilePath;
-      // Use system Chrome instead of Puppeteer's bundled Chromium for profile compatibility
-      launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
       launchOptions.headless = false; // System Chrome with profile works better non-headless
-      console.log('[Download] Using system Chrome for profile compatibility');
     }
 
     browserInstance = await puppeteer.launch(launchOptions);
@@ -85,6 +167,7 @@ async function closeBrowser(): Promise<void> {
 router.post('/download', async (req: Request, res: Response) => {
   const startTime = Date.now();
   const request = req.body as DownloadRequest;
+  const demoMode = req.body.demo === true; // Demo mode shows browser
   const logs: string[] = [];
   const screenshots: string[] = [];
 
@@ -95,7 +178,7 @@ router.post('/download', async (req: Request, res: Response) => {
     logs.push(logMessage);
   };
 
-  log(`Received download request for vendor: ${request.vendorKey}`);
+  log(`Received download request for vendor: ${request.vendorKey}${demoMode ? ' (DEMO MODE)' : ''}`);
 
   // Validate request
   if (!request.vendorKey) {
@@ -150,27 +233,41 @@ router.post('/download', async (req: Request, res: Response) => {
 
   // Get credentials
   let credentials: VendorCredentials;
+  let useStoredAuth = false;
+  let storedAuth: AuthData | null = null;
 
   if (request.credentials) {
     // Use provided credentials (fallback)
     log('Using provided credentials');
     credentials = request.credentials;
   } else {
-    // Fetch from Secret Manager
-    try {
-      const secretManager = getSecretManager();
-      credentials = await secretManager.getCredentials(vendorConfig.secretName);
-      log('Retrieved credentials from Secret Manager');
-    } catch (error) {
-      log(`Failed to get credentials: ${(error as Error).message}`);
-      const response: DownloadResponse = {
-        success: false,
-        vendorKey: request.vendorKey,
-        files: [],
-        error: `Failed to retrieve credentials: ${(error as Error).message}`,
-        debug: { logs },
-      };
-      return res.status(500).json(response);
+    // First, check for stored auth data from manual login
+    storedAuth = loadAuthData(request.vendorKey);
+    if (storedAuth && storedAuth.cookies && storedAuth.cookies.length > 0) {
+      log(`Found ${storedAuth.cookies.length} stored cookies for ${request.vendorKey}`);
+      if (storedAuth.localStorage) {
+        log(`Found ${Object.keys(storedAuth.localStorage).length} localStorage items`);
+      }
+      useStoredAuth = true;
+      credentials = { username: '', password: '' }; // Placeholder, won't be used
+    } else {
+      // Fetch from Secret Manager
+      try {
+        const secretManager = getSecretManager();
+        credentials = await secretManager.getCredentials(vendorConfig.secretName);
+        log('Retrieved credentials from Secret Manager');
+      } catch (error) {
+        log(`Failed to get credentials: ${(error as Error).message}`);
+        log('Tip: Use POST /download/login to manually login and save cookies');
+        const response: DownloadResponse = {
+          success: false,
+          vendorKey: request.vendorKey,
+          files: [],
+          error: `Failed to retrieve credentials. Use POST /download/login to manually login first.`,
+          debug: { logs },
+        };
+        return res.status(500).json(response);
+      }
     }
   }
 
@@ -179,7 +276,7 @@ router.post('/download', async (req: Request, res: Response) => {
   const useProfileAuth = !!credentials.chromeProfilePath;
 
   try {
-    const browser = await getBrowser(credentials.chromeProfilePath);
+    const browser = await getBrowser(credentials.chromeProfilePath, demoMode);
     page = await browser.newPage();
 
     // Set viewport and user agent
@@ -188,7 +285,51 @@ router.post('/download', async (req: Request, res: Response) => {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    if (useProfileAuth) {
+    if (useStoredAuth && storedAuth) {
+      // Cookie-based auth using stored cookies from manual login
+      log('Using stored auth data for authentication');
+
+      // Set cookies before navigation
+      await page.setCookie(...storedAuth.cookies);
+      log(`Set ${storedAuth.cookies.length} cookies`);
+
+      // Navigate to the app first (need page context for localStorage)
+      const baseUrl = 'https://' + new URL(vendor.loginUrl).hostname;
+      await page.goto(baseUrl, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      });
+
+      // Restore localStorage if available
+      if (storedAuth.localStorage && Object.keys(storedAuth.localStorage).length > 0) {
+        log(`Restoring ${Object.keys(storedAuth.localStorage).length} localStorage items`);
+        await page.evaluate(`
+          (function(items) {
+            for (const [key, value] of Object.entries(items)) {
+              localStorage.setItem(key, value);
+            }
+          })(${JSON.stringify(storedAuth.localStorage)})
+        `);
+
+        // Reload page to apply localStorage (some SPAs need this)
+        await page.reload({ waitUntil: 'networkidle2' });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Take screenshot to verify logged-in state
+      const cookieScreenshot = await page.screenshot({ encoding: 'base64' });
+      screenshots.push(cookieScreenshot as string);
+
+      // Verify login success
+      const isLoggedIn = await vendor.isLoggedIn(page);
+      if (!isLoggedIn) {
+        log('Stored auth expired or invalid. Please run POST /download/login again.');
+        throw new Error('Stored auth expired. Please run POST /download/login to re-authenticate.');
+      }
+      log('Cookie-based authentication successful');
+
+    } else if (useProfileAuth) {
       // Chrome profile auth: navigate to login page first to trigger OAuth redirect if needed
       log('Using Chrome profile authentication');
 
@@ -413,6 +554,201 @@ router.post('/download/test', async (req: Request, res: Response) => {
     secretName: vendorConfig?.secretName,
     status: 'ready',
   });
+});
+
+/**
+ * POST /download/login
+ * Manual login for OAuth services (opens headful browser)
+ *
+ * Use this endpoint to manually login to OAuth-based vendors like Aitemasu.
+ * The browser will open in non-headless mode, allowing you to complete the
+ * Google OAuth flow. Once logged in, cookies are saved for automated use.
+ *
+ * Request body: { vendorKey: string, timeout?: number }
+ * - vendorKey: The vendor to login to
+ * - timeout: Max wait time in seconds (default: 120)
+ */
+router.post('/download/login', async (req: Request, res: Response) => {
+  const { vendorKey, timeout = 120 } = req.body;
+  const logs: string[] = [];
+
+  const log = (message: string) => {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}`;
+    console.log(logMessage);
+    logs.push(logMessage);
+  };
+
+  log(`Manual login request for vendor: ${vendorKey}`);
+
+  // Validate request
+  if (!vendorKey) {
+    return res.status(400).json({ success: false, error: 'vendorKey is required' });
+  }
+
+  if (!isVendorWhitelisted(vendorKey)) {
+    return res.status(403).json({ success: false, error: `Vendor '${vendorKey}' is not whitelisted` });
+  }
+
+  const registry = getVendorRegistry();
+  const vendor = registry.get(vendorKey);
+
+  if (!vendor) {
+    return res.status(501).json({ success: false, error: `Vendor '${vendorKey}' is not implemented` });
+  }
+
+  // Close any existing browser to ensure clean state
+  await closeBrowser();
+
+  let browser: Browser | null = null;
+  let page: Page | null = null;
+
+  try {
+    log('Launching headful browser for manual login...');
+
+    // Launch browser in headful (non-headless) mode using system Chrome
+    browser = await puppeteer.launch({
+      headless: false,
+      protocolTimeout: 120000, // 2 minutes for CDP operations
+      executablePath: process.platform === 'darwin'
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : undefined, // Use default on other platforms
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--window-size=1200,800',
+        '--window-position=100,100',
+      ],
+      defaultViewport: { width: 1200, height: 800 },
+    });
+
+    page = await browser.newPage();
+
+    // Navigate to vendor login page
+    log(`Navigating to login page: ${vendor.loginUrl}`);
+    await page.goto(vendor.loginUrl, {
+      waitUntil: 'networkidle2',
+      timeout: 30000,
+    });
+
+    log('Browser opened. Please complete the login manually.');
+    log(`Waiting up to ${timeout} seconds for login to complete...`);
+    log('The browser will stay open until you login and navigate away from the login page.');
+
+    // Record the initial URL to detect navigation
+    const initialUrl = page.url();
+    log(`Initial URL: ${initialUrl}`);
+
+    // Poll for login success - require URL change first
+    const startTime = Date.now();
+    const timeoutMs = timeout * 1000;
+    let loggedIn = false;
+
+    while (Date.now() - startTime < timeoutMs) {
+      const currentUrl = page.url();
+
+      // Only check login status if URL has changed away from login/index/google pages
+      const isOnLoginPage = currentUrl.includes('/login') ||
+                           currentUrl.includes('/index') ||
+                           currentUrl.includes('accounts.google.com');
+
+      if (!isOnLoginPage && currentUrl !== initialUrl) {
+        log(`URL changed to: ${currentUrl}`);
+        // Give the page time to load
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Now check login status
+        loggedIn = await vendor.isLoggedIn(page);
+        if (loggedIn) {
+          log('Login confirmed after URL change');
+          break;
+        }
+      }
+
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    if (!loggedIn) {
+      log('Login timeout - user did not complete login in time');
+      return res.status(408).json({
+        success: false,
+        error: 'Login timeout. Please try again and complete the login faster.',
+        logs,
+      });
+    }
+
+    // Get ALL cookies from the browser using CDP (includes httpOnly)
+    const client = await page.createCDPSession();
+    const { cookies: allCookies } = await client.send('Network.getAllCookies');
+    log(`Captured ${allCookies.length} cookies (including httpOnly)`);
+
+    // Log cookie domains for debugging
+    const domains = [...new Set(allCookies.map((c: Protocol.Network.Cookie) => c.domain))];
+    log(`Cookie domains: ${domains.join(', ')}`);
+
+    // Also capture localStorage (some SPAs store auth tokens here)
+    const localStorageData = await page.evaluate(`
+      (function() {
+        var items = {};
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          if (key) {
+            items[key] = localStorage.getItem(key) || '';
+          }
+        }
+        return items;
+      })()
+    `) as Record<string, string>;
+    log(`LocalStorage keys: ${Object.keys(localStorageData || {}).join(', ')}`);
+
+    // Save ALL cookies (not just vendor domain - auth might be on different domain)
+    log(`Saving all ${allCookies.length} cookies`);
+
+    // Save cookies and localStorage together
+    const authData = {
+      cookies: allCookies,
+      localStorage: localStorageData,
+    };
+    await saveCookies(vendorKey, authData as unknown as Protocol.Network.Cookie[]);
+
+    // Take a screenshot as confirmation
+    const screenshot = await page.screenshot({ encoding: 'base64' });
+
+    log('Manual login completed successfully!');
+    log('Browser will close in 5 seconds...');
+
+    // Keep browser open for a few seconds so user can see the result
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    return res.json({
+      success: true,
+      vendorKey,
+      message: 'Login successful! Cookies saved for automated use.',
+      cookieCount: allCookies.length,
+      screenshot,
+      logs,
+    });
+
+  } catch (error) {
+    const errorMessage = (error as Error).message;
+    log(`Error during manual login: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      error: errorMessage,
+      logs,
+    });
+  } finally {
+    // Close the browser
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
 });
 
 // Cleanup on process exit
