@@ -179,6 +179,27 @@ function processAllVendorInvoices() {
 function setupMonthlyVendorTrigger() {
   return globalThis.setupMonthlyVendorTrigger();
 }
+
+// Auth failure handling functions (Phase 3.4)
+function checkVendorCookieStatus() {
+  return globalThis.checkVendorCookieStatus();
+}
+
+function updateVendorCookieMetadata(vendorKey, expirationDays) {
+  return globalThis.updateVendorCookieMetadata(vendorKey, expirationDays);
+}
+
+function testAuthFailureNotification(vendorKey) {
+  return globalThis.testAuthFailureNotification(vendorKey);
+}
+
+function testAuthFailureNotification_Aitemasu() {
+  return globalThis.testAuthFailureNotification_Aitemasu();
+}
+
+function updateCookie_Aitemasu_30days() {
+  return globalThis.updateCookie_Aitemasu_30days();
+}
 `
   },
   plugins: [

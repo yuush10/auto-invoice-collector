@@ -6,8 +6,9 @@
 import { AppLogger } from '../../utils/logger';
 import { FolderManager } from '../drive/FolderManager';
 import { FileUploader } from '../drive/FileUploader';
-import { getVendorClient, DownloadedFile, DownloadOptions } from './VendorClient';
+import { getVendorClient, DownloadedFile, DownloadOptions, DownloadResponse } from './VendorClient';
 import { Config } from '../../config';
+import { VendorError } from '../../types/vendor';
 
 export interface ProcessResult {
   success: boolean;
@@ -15,6 +16,10 @@ export interface ProcessResult {
   filesProcessed: number;
   filesUploaded: UploadedFileInfo[];
   errors: string[];
+  /** Detailed vendor error if download failed */
+  vendorError?: VendorError;
+  /** Debug info from Cloud Run (screenshots, logs) */
+  debug?: DownloadResponse['debug'];
 }
 
 export interface UploadedFileInfo {
@@ -63,6 +68,8 @@ export class VendorInvoiceProcessor {
 
       if (!downloadResponse.success) {
         result.errors.push(`Download failed: ${downloadResponse.error}`);
+        result.vendorError = downloadResponse.vendorError;
+        result.debug = downloadResponse.debug;
         AppLogger.error(`[VendorProcessor] Download failed for ${vendorKey}`, new Error(downloadResponse.error));
         return result;
       }

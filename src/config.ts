@@ -28,6 +28,8 @@ export interface VendorConfig {
   loginRequired: boolean;
   /** Special handling type */
   specialHandling?: 'api' | 'oauth' | 'mfa-required';
+  /** Portal URL for login/access */
+  portalUrl?: string;
 }
 
 /**
@@ -99,13 +101,15 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
     vendorKey: 'ibj',
     vendorName: 'IBJ',
     domainPatterns: ['ibjapan.com'],
-    loginRequired: true
+    loginRequired: true,
+    portalUrl: 'https://www.ibjapan.com/div/logins',
   },
   {
     vendorKey: 'aitemasu',
     vendorName: 'Aitemasu',
     domainPatterns: ['aitemasu.me'],
-    loginRequired: true
+    loginRequired: true,
+    portalUrl: 'https://app.aitemasu.me/',
   },
   {
     vendorKey: 'google-ads',
@@ -113,8 +117,9 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
     domainPatterns: ['ads.google.com'],
     urlPattern: /ads\.google\.com\/aw\/billing/,
     loginRequired: true,
-    specialHandling: 'api'
-  }
+    specialHandling: 'api',
+    portalUrl: 'https://ads.google.com/',
+  },
 ];
 
 /**
