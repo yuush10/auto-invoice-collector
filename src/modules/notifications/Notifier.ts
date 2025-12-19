@@ -71,18 +71,11 @@ export class Notifier {
   sendVendorAuthFailureNotification(notification: VendorAuthNotification): void {
     try {
       const subject = `[Auto Invoice Collector] 認証エラー: ${notification.vendorName}`;
-      const body = this.formatVendorAuthFailureReport(notification);
+      const htmlBody = this.formatVendorAuthFailureReport(notification);
 
-      // Build email options
-      const mailOptions: GoogleAppsScript.Mail.MailAdvancedParameters = {
-        to: this.adminEmail,
-        subject,
-        htmlBody: body,
-      };
-
-      // Attach screenshots if available
+      // Build attachments if screenshots available
+      const attachments: GoogleAppsScript.Base.BlobSource[] = [];
       if (notification.screenshots && notification.screenshots.length > 0) {
-        const attachments: GoogleAppsScript.Base.BlobSource[] = [];
         notification.screenshots.forEach((base64, index) => {
           try {
             const decoded = Utilities.base64Decode(base64);
@@ -96,13 +89,14 @@ export class Notifier {
             AppLogger.warn(`Failed to decode screenshot ${index + 1}: ${err}`);
           }
         });
-
-        if (attachments.length > 0) {
-          mailOptions.attachments = attachments;
-        }
       }
 
-      MailApp.sendEmail(mailOptions);
+      // Use GmailApp instead of MailApp (uses existing gmail.send scope)
+      GmailApp.sendEmail(this.adminEmail, subject, '', {
+        htmlBody,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      });
+
       AppLogger.info(
         `Sent vendor auth failure notification for ${notification.vendorKey} to ${this.adminEmail}`
       );

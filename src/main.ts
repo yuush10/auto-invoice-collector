@@ -1642,6 +1642,24 @@ function testAuthFailureNotification(vendorKey: string): void {
 }
 (globalThis as any).testAuthFailureNotification = testAuthFailureNotification;
 
+/**
+ * Test auth failure notification for Aitemasu vendor
+ * Run this from Apps Script editor to verify notification works
+ */
+function testAuthFailureNotification_Aitemasu(): void {
+  testAuthFailureNotification('aitemasu');
+}
+(globalThis as any).testAuthFailureNotification_Aitemasu = testAuthFailureNotification_Aitemasu;
+
+/**
+ * Update Aitemasu cookie metadata (30 day expiration)
+ * Run after manually refreshing cookies
+ */
+function updateCookie_Aitemasu_30days(): void {
+  updateVendorCookieMetadata('aitemasu', 30);
+}
+(globalThis as any).updateCookie_Aitemasu_30days = updateCookie_Aitemasu_30days;
+
 // Debug function to diagnose data issues
 function debugDraftData(): void {
   const spreadsheetId = Config.getLogSheetId();
