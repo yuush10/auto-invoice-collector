@@ -4,6 +4,15 @@
  */
 
 import { Config, VendorConfig, VENDOR_CONFIGS } from '../../config';
+import {
+  AuthStatus,
+  VendorError,
+  VendorErrorCode,
+  authFailureToErrorCode,
+  detectAuthFailureFromMessage,
+  getRecoveryInstructions,
+} from '../../types/vendor';
+import { AppLogger } from '../../utils/logger';
 
 /**
  * Download options
@@ -51,10 +60,16 @@ export interface DownloadResponse {
   vendorKey: string;
   files: DownloadedFile[];
   error?: string;
+  /** Parsed vendor error with categorization */
+  vendorError?: VendorError;
   debug?: {
     screenshots?: string[];
     logs?: string[];
     duration?: number;
+    /** Auth status from Cloud Run (if provided) */
+    authStatus?: AuthStatus;
+    /** URL when error occurred */
+    currentUrl?: string;
   };
 }
 
@@ -115,21 +130,113 @@ export class VendorClient {
     const responseText = response.getContentText();
 
     if (responseCode >= 200 && responseCode < 300) {
-      return JSON.parse(responseText) as DownloadResponse;
+      const response = JSON.parse(responseText) as DownloadResponse;
+      // Even successful responses might have auth issues in debug info
+      return this.enrichResponseWithErrorAnalysis(response, vendorConfig);
     }
 
     // Handle error response
     try {
       const errorResponse = JSON.parse(responseText) as DownloadResponse;
-      return errorResponse;
+      return this.enrichResponseWithErrorAnalysis(errorResponse, vendorConfig);
     } catch {
-      return {
+      const errorResponse: DownloadResponse = {
         success: false,
         vendorKey,
         files: [],
         error: `HTTP ${responseCode}: ${responseText}`,
       };
+      return this.enrichResponseWithErrorAnalysis(errorResponse, vendorConfig);
     }
+  }
+
+  /**
+   * Enrich response with detailed error analysis for auth failures
+   */
+  private enrichResponseWithErrorAnalysis(
+    response: DownloadResponse,
+    vendorConfig: VendorConfig
+  ): DownloadResponse {
+    // If success, no need to analyze errors
+    if (response.success) {
+      return response;
+    }
+
+    // Analyze error message for auth failure patterns
+    const errorMessage = response.error || '';
+    let authFailureType = detectAuthFailureFromMessage(errorMessage);
+
+    // Also check auth status from Cloud Run if provided
+    if (!authFailureType && response.debug?.authStatus?.failureType) {
+      authFailureType = response.debug.authStatus.failureType;
+    }
+
+    // Check HTTP-level auth failures
+    if (!authFailureType && errorMessage.includes('HTTP 401')) {
+      authFailureType = 'session_expired';
+    } else if (!authFailureType && errorMessage.includes('HTTP 403')) {
+      authFailureType = 'credentials_invalid';
+    }
+
+    // If auth failure detected, create detailed error object
+    if (authFailureType) {
+      const vendorError: VendorError = {
+        code: authFailureToErrorCode(authFailureType),
+        message: errorMessage,
+        isAuthFailure: true,
+        authFailure: {
+          authenticated: false,
+          failureType: authFailureType,
+          message: errorMessage,
+          currentUrl: response.debug?.currentUrl,
+        },
+        recoveryInstructions: getRecoveryInstructions(
+          authFailureType,
+          vendorConfig.vendorName
+        ),
+      };
+
+      AppLogger.warn(
+        `[VendorClient] Auth failure detected for ${vendorConfig.vendorKey}: ${authFailureType}`
+      );
+
+      return {
+        ...response,
+        vendorError,
+      };
+    }
+
+    // Non-auth error
+    const errorCode = this.categorizeNonAuthError(errorMessage);
+    const vendorError: VendorError = {
+      code: errorCode,
+      message: errorMessage,
+      isAuthFailure: false,
+    };
+
+    return {
+      ...response,
+      vendorError,
+    };
+  }
+
+  /**
+   * Categorize non-auth errors
+   */
+  private categorizeNonAuthError(errorMessage: string): VendorErrorCode {
+    if (/timeout|timed out/i.test(errorMessage)) {
+      return 'TIMEOUT';
+    }
+    if (/network|connection|socket/i.test(errorMessage)) {
+      return 'NETWORK_ERROR';
+    }
+    if (/download.*fail/i.test(errorMessage)) {
+      return 'DOWNLOAD_FAILED';
+    }
+    if (/parse|json|format/i.test(errorMessage)) {
+      return 'PARSE_ERROR';
+    }
+    return 'UNKNOWN_ERROR';
   }
 
   /**

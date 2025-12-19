@@ -915,8 +915,11 @@ function api_resetToDefaultPrompt(promptType: string): string {
 // ============================================
 
 // Vendor Invoice Processing (Phase 3)
-import { processVendorInvoices as processVendorInvoicesImpl } from './modules/vendors/VendorInvoiceProcessor';
+import { processVendorInvoices as processVendorInvoicesImpl, ProcessResult as VendorProcessResult } from './modules/vendors/VendorInvoiceProcessor';
 import { DownloadOptions as VendorDownloadOptions } from './modules/vendors/VendorClient';
+import { getCookieExpirationTracker } from './modules/vendors/CookieExpirationTracker';
+import { VendorAuthNotification, getRecoveryInstructions } from './types/vendor';
+import { VENDOR_CONFIGS } from './config';
 
 /**
  * Process vendor invoices: download from Cloud Run and upload to Google Drive
@@ -1452,25 +1455,50 @@ async function processAllVendorInvoicesAsync(): Promise<void> {
   // Note: Only enable vendors that have been fully tested
   const enabledVendors = ['aitemasu']; // Add more as they become ready: 'ibj', 'google-ads'
 
-  const results: Array<{ vendor: string; result: string }> = [];
+  const results: Array<{ vendor: string; result: string; processResult?: VendorProcessResult }> = [];
+  const notifier = new Notifier(Config.getAdminEmail());
+  const cookieTracker = getCookieExpirationTracker();
 
   for (const vendorKey of enabledVendors) {
     try {
       AppLogger.info(`[Vendor] Processing vendor: ${vendorKey}`);
-      const result = downloadVendorInvoices(vendorKey);
-      const parsed = JSON.parse(result);
+      const processResult = processVendorInvoicesImpl(vendorKey);
 
-      if (parsed.success) {
-        const data = parsed.data;
+      if (processResult.success) {
         results.push({
           vendor: vendorKey,
-          result: `Success: ${data.filesUploaded?.length || 0} files uploaded`
+          result: `Success: ${processResult.filesUploaded?.length || 0} files uploaded`,
+          processResult
         });
+        // Record successful auth for cookie tracking
+        cookieTracker.recordSuccessfulAuth(vendorKey);
       } else {
         results.push({
           vendor: vendorKey,
-          result: `Failed: ${parsed.error}`
+          result: `Failed: ${processResult.errors.join(', ')}`,
+          processResult
         });
+
+        // Send auth failure notification if applicable
+        if (processResult.vendorError?.isAuthFailure) {
+          const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+          const authNotification: VendorAuthNotification = {
+            vendorKey,
+            vendorName: vendorConfig?.vendorName || vendorKey,
+            failureType: processResult.vendorError.authFailure?.failureType || 'unknown',
+            errorMessage: processResult.vendorError.message,
+            screenshots: processResult.debug?.screenshots,
+            currentUrl: processResult.debug?.currentUrl,
+            failedAt: new Date(),
+            recoveryInstructions: processResult.vendorError.recoveryInstructions ||
+              getRecoveryInstructions(
+                processResult.vendorError.authFailure?.failureType || 'unknown',
+                vendorConfig?.vendorName || vendorKey
+              ),
+          };
+          notifier.sendVendorAuthFailureNotification(authNotification);
+          AppLogger.info(`[Vendor] Sent auth failure notification for ${vendorKey}`);
+        }
       }
     } catch (error) {
       AppLogger.error(`[Vendor] Error processing ${vendorKey}`, error as Error);
@@ -1479,6 +1507,25 @@ async function processAllVendorInvoicesAsync(): Promise<void> {
         result: `Error: ${(error as Error).message}`
       });
     }
+  }
+
+  // Check for cookie expiration warnings
+  try {
+    const vendorsNeedingWarning = cookieTracker.getVendorsNeedingWarning();
+    for (const status of vendorsNeedingWarning) {
+      const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === status.vendorKey);
+      if (vendorConfig && status.daysUntilExpiration !== undefined) {
+        notifier.sendCookieExpirationWarning(
+          status.vendorKey,
+          vendorConfig.vendorName,
+          status.daysUntilExpiration
+        );
+        cookieTracker.markWarningSent(status.vendorKey);
+        AppLogger.info(`[Vendor] Sent cookie expiration warning for ${status.vendorKey}`);
+      }
+    }
+  } catch (error) {
+    AppLogger.error('[Vendor] Error checking cookie expirations', error as Error);
   }
 
   // Log summary
@@ -1527,6 +1574,73 @@ function setupMonthlyVendorTrigger(): void {
   Logger.log('Monthly vendor trigger created successfully (3rd of each month at 10 AM)');
 }
 (globalThis as any).setupMonthlyVendorTrigger = setupMonthlyVendorTrigger;
+
+/**
+ * Check cookie status for all vendors
+ * Run this manually to see cookie expiration status
+ */
+function checkVendorCookieStatus(): void {
+  Logger.log('=== Vendor Cookie Status Check ===');
+  const cookieTracker = getCookieExpirationTracker();
+  const statuses = cookieTracker.checkAllCookieStatus();
+
+  for (const status of statuses) {
+    const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === status.vendorKey);
+    const vendorName = vendorConfig?.vendorName || status.vendorKey;
+    Logger.log(`\n${vendorName} (${status.vendorKey}):`);
+    Logger.log(`  Valid: ${status.isValid}`);
+    Logger.log(`  Days until expiration: ${status.daysUntilExpiration ?? 'unknown'}`);
+    Logger.log(`  Should warn: ${status.shouldWarn}`);
+    Logger.log(`  Status: ${status.statusMessage}`);
+  }
+}
+(globalThis as any).checkVendorCookieStatus = checkVendorCookieStatus;
+
+/**
+ * Update cookie metadata for a vendor after manual cookie refresh
+ * @param vendorKey Vendor identifier
+ * @param expirationDays Days until cookie expires (optional)
+ */
+function updateVendorCookieMetadata(vendorKey: string, expirationDays?: number): void {
+  const cookieTracker = getCookieExpirationTracker();
+  const expiresAt = expirationDays
+    ? new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000)
+    : undefined;
+
+  cookieTracker.recordCookieUpdate(vendorKey, expiresAt);
+  Logger.log(`Updated cookie metadata for ${vendorKey}`);
+  if (expiresAt) {
+    Logger.log(`  Expires: ${expiresAt.toISOString()}`);
+  }
+}
+(globalThis as any).updateVendorCookieMetadata = updateVendorCookieMetadata;
+
+/**
+ * Send test auth failure notification
+ * Useful for verifying notification format and delivery
+ */
+function testAuthFailureNotification(vendorKey: string): void {
+  const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+  if (!vendorConfig) {
+    Logger.log(`Vendor not found: ${vendorKey}`);
+    return;
+  }
+
+  const notifier = new Notifier(Config.getAdminEmail());
+  const testNotification: VendorAuthNotification = {
+    vendorKey,
+    vendorName: vendorConfig.vendorName,
+    failureType: 'session_expired',
+    errorMessage: 'This is a test notification. Your session has expired.',
+    currentUrl: `https://example.com/${vendorKey}/login`,
+    failedAt: new Date(),
+    recoveryInstructions: getRecoveryInstructions('session_expired', vendorConfig.vendorName),
+  };
+
+  notifier.sendVendorAuthFailureNotification(testNotification);
+  Logger.log(`Sent test auth failure notification for ${vendorKey} to ${Config.getAdminEmail()}`);
+}
+(globalThis as any).testAuthFailureNotification = testAuthFailureNotification;
 
 // Debug function to diagnose data issues
 function debugDraftData(): void {
