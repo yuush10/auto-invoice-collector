@@ -1632,7 +1632,7 @@ function testAuthFailureNotification(vendorKey: string): void {
     vendorName: vendorConfig.vendorName,
     failureType: 'session_expired',
     errorMessage: 'This is a test notification. Your session has expired.',
-    currentUrl: `https://example.com/${vendorKey}/login`,
+    currentUrl: vendorConfig.portalUrl || `https://${vendorConfig.domainPatterns[0]}/`,
     failedAt: new Date(),
     recoveryInstructions: getRecoveryInstructions('session_expired', vendorConfig.vendorName),
   };

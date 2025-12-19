@@ -218,7 +218,7 @@ export class Notifier {
     .info-row { margin: 8px 0; }
     .label { font-weight: bold; color: #666; }
     .instructions { background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 15px; }
-    .instructions ol { margin: 10px 0; padding-left: 20px; }
+    .instructions ul { margin: 10px 0; padding-left: 20px; list-style-type: none; }
     .instructions li { margin: 5px 0; }
     .url { word-break: break-all; font-family: monospace; background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
     .footer { margin-top: 20px; font-size: 12px; color: #666; }
@@ -228,7 +228,7 @@ export class Notifier {
 <body>
   <div class="container">
     <div class="header">
-      <h2 style="margin:0;">🔐 ベンダー認証エラー</h2>
+      <h2 style="margin:0;">ベンダー認証エラー</h2>
     </div>
     <div class="content">
       <div class="section">
@@ -243,9 +243,9 @@ export class Notifier {
       <div class="section">
         <h3>復旧手順</h3>
         <div class="instructions">
-          <ol>
+          <ul>
             ${notification.recoveryInstructions.map(inst => `<li>${inst}</li>`).join('\n            ')}
-          </ol>
+          </ul>
         </div>
       </div>
 `;
@@ -254,7 +254,7 @@ export class Notifier {
       html += `
       <div class="section">
         <div class="screenshot-note">
-          <strong>📷 スクリーンショット添付:</strong> ${notification.screenshots.length}枚のスクリーンショットがこのメールに添付されています。エラー発生時の画面状態を確認してください。
+          <strong>スクリーンショット添付:</strong> ${notification.screenshots.length}枚のスクリーンショットがこのメールに添付されています。エラー発生時の画面状態を確認してください。
         </div>
       </div>
 `;
@@ -281,7 +281,7 @@ export class Notifier {
     vendorName: string,
     daysUntilExpiration: number
   ): string {
-    let report = `⚠️ Cookie期限切れ警告\n\n`;
+    let report = `[警告] Cookie期限切れ警告\n\n`;
     report += `${vendorName}のCookieが${daysUntilExpiration}日後に期限切れになります。\n\n`;
     report += `以下の手順でCookieを更新してください:\n\n`;
     report += `1. ブラウザで${vendorName}のサイトにログインしてください\n`;
