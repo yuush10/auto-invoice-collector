@@ -88,6 +88,11 @@ export class GmailOtpService {
   /**
    * Initialize the Gmail API client with proper authentication
    * Uses service account with domain-wide delegation to impersonate the target email
+   *
+   * Authentication strategies (in order):
+   * 1. Cloud Run: Use default service account from metadata server
+   * 2. Local with key: Use service account key from Secret Manager
+   * 3. Fail with clear error for manual OTP entry
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
@@ -96,8 +101,87 @@ export class GmailOtpService {
 
     console.log(`[GmailOtpService] Initializing for ${this.targetEmail}`);
 
+    // Try Cloud Run / GCE metadata-based auth first
+    if (await this.tryCloudRunAuth()) {
+      return;
+    }
+
+    // Try service account key from Secret Manager
+    if (await this.tryServiceAccountKeyAuth()) {
+      return;
+    }
+
+    // No auth method available
+    throw new Error(
+      'Gmail API authentication failed. ' +
+      'On Cloud Run: ensure the service account has domain-wide delegation. ' +
+      'Locally: service account key creation may be blocked by org policy - use manual OTP entry.'
+    );
+  }
+
+  /**
+   * Try to authenticate using Cloud Run's default service account
+   * This works when running on Cloud Run/GCE with an attached service account
+   * that has domain-wide delegation enabled
+   */
+  private async tryCloudRunAuth(): Promise<boolean> {
+    // Check if running on Cloud Run / GCE (metadata server available)
+    const isCloudRun = process.env.K_SERVICE || process.env.GOOGLE_CLOUD_PROJECT;
+    if (!isCloudRun) {
+      console.log('[GmailOtpService] Not running on Cloud Run, skipping metadata auth');
+      return false;
+    }
+
+    console.log('[GmailOtpService] Trying Cloud Run metadata-based authentication...');
+
     try {
-      // Get service account key from Secret Manager
+      // Use default credentials with impersonation
+      const auth = new google.auth.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+      });
+
+      // Get the service account email from default credentials
+      const credentials = await auth.getCredentials();
+      const serviceAccountEmail = credentials.client_email;
+
+      if (!serviceAccountEmail) {
+        console.log('[GmailOtpService] No service account email found in default credentials');
+        return false;
+      }
+
+      console.log(`[GmailOtpService] Using service account: ${serviceAccountEmail}`);
+
+      // For domain-wide delegation on Cloud Run, we need to create a JWT client
+      // using the service account's identity to sign tokens for impersonation
+      const jwtClient = new google.auth.JWT({
+        email: serviceAccountEmail,
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+        subject: this.targetEmail,
+      });
+
+      // On Cloud Run, the JWT client will use the metadata server to sign tokens
+      await jwtClient.authorize();
+
+      this.gmail = google.gmail({ version: 'v1', auth: jwtClient });
+      this.initialized = true;
+
+      console.log('[GmailOtpService] Initialized with Cloud Run service account');
+      console.log(`[GmailOtpService] Impersonating: ${this.targetEmail}`);
+      return true;
+    } catch (error) {
+      console.warn('[GmailOtpService] Cloud Run auth failed:', (error as Error).message);
+      return false;
+    }
+  }
+
+  /**
+   * Try to authenticate using service account key from Secret Manager
+   * This is a fallback for local development when key creation is allowed
+   */
+  private async tryServiceAccountKeyAuth(): Promise<boolean> {
+    console.log('[GmailOtpService] Trying service account key authentication...');
+
+    try {
       const serviceAccountKey = await this.getServiceAccountKey();
 
       // Create JWT client with domain-wide delegation
@@ -105,21 +189,21 @@ export class GmailOtpService {
         email: serviceAccountKey.client_email,
         key: serviceAccountKey.private_key,
         scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
-        subject: this.targetEmail, // User to impersonate
+        subject: this.targetEmail,
       });
 
-      // Authorize the client
       await jwtClient.authorize();
 
       this.gmail = google.gmail({ version: 'v1', auth: jwtClient });
       this.initialized = true;
 
-      console.log('[GmailOtpService] Initialized successfully with domain-wide delegation');
+      console.log('[GmailOtpService] Initialized with service account key');
       console.log(`[GmailOtpService] Service account: ${serviceAccountKey.client_email}`);
       console.log(`[GmailOtpService] Impersonating: ${this.targetEmail}`);
+      return true;
     } catch (error) {
-      console.error('[GmailOtpService] Initialization failed:', error);
-      throw new Error(`Failed to initialize Gmail API: ${(error as Error).message}`);
+      console.warn('[GmailOtpService] Service account key auth failed:', (error as Error).message);
+      return false;
     }
   }
 
@@ -134,7 +218,6 @@ export class GmailOtpService {
       throw new Error('Project ID not configured. Set GOOGLE_CLOUD_PROJECT environment variable.');
     }
 
-    // Use the secret manager client directly to get raw JSON
     const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
     const client = new SecretManagerServiceClient();
     const name = `projects/${projectId}/secrets/${this.serviceAccountSecretName}/versions/latest`;
@@ -147,7 +230,6 @@ export class GmailOtpService {
     const secretData = version.payload.data.toString();
     const serviceAccountKey = JSON.parse(secretData) as ServiceAccountKey;
 
-    // Validate required fields
     if (!serviceAccountKey.client_email || !serviceAccountKey.private_key) {
       throw new Error(`Service account key missing required fields (client_email, private_key)`);
     }

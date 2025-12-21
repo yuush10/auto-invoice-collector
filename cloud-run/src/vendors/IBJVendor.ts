@@ -192,26 +192,47 @@ export class IBJVendor extends BaseVendor {
     // Step 4: Check if we're on OTP input page
     const otpInputExists = await this.elementExists(page, SELECTORS.otpInput);
     if (otpInputExists) {
-      this.log('Step 4: Waiting for OTP email');
+      this.log('Step 4: Getting OTP code');
 
       let otpCode: string;
+
+      // Try Gmail API first, fall back to manual entry
+      let manualEntry = false;
       try {
-        const otpResult = await this.gmailOtpService.waitForOtp(
+        this.log('Attempting to fetch OTP from Gmail API...');
+        const otpResult = await this.gmailOtpService!.waitForOtp(
           IBJ_OTP_CONFIG,
           90000, // 90 seconds timeout
           5000   // Check every 5 seconds
         );
         otpCode = otpResult.code;
-        this.log(`OTP received: ${otpCode} (from email at ${otpResult.timestamp.toISOString()})`);
-      } catch (error) {
-        this.log(`Failed to get OTP: ${(error as Error).message}`, 'error');
-        await this.takeScreenshot(page, 'otp-timeout');
-        throw new Error(`OTP verification failed: ${(error as Error).message}`);
+        this.log(`OTP received via Gmail API: ${otpCode}`);
+      } catch (gmailError) {
+        this.log(`Gmail API not available: ${(gmailError as Error).message}`, 'warn');
+        this.log('');
+        this.log('='.repeat(60));
+        this.log('MANUAL OTP ENTRY REQUIRED:');
+        this.log('Gmail API is not available (org policy may block service account keys).');
+        this.log('Please enter the OTP code manually in the browser, then click submit.');
+        this.log('The OTP was sent to: ' + ((credentials as IBJCredentials).otpEmail || this.defaultOtpEmail));
+        this.log('');
+        this.log('Waiting for you to enter the OTP and submit...');
+        this.log('='.repeat(60));
+        this.log('');
+
+        // Wait for user to enter OTP manually
+        otpCode = await this.waitForManualOtpEntry(page, 120000);
+        this.log(`Manual OTP entry detected: ${otpCode}`);
+        manualEntry = true;
       }
 
-      // Step 5: Enter OTP code
-      this.log('Step 5: Entering OTP code');
-      await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+      // Step 5: Enter OTP code (only if fetched via Gmail API)
+      if (!manualEntry) {
+        this.log('Step 5: Entering OTP code');
+        await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+      } else {
+        this.log('Step 5: OTP already entered manually, skipping');
+      }
       await this.takeScreenshot(page, 'otp-entered');
 
       // Step 6: Submit OTP
@@ -268,6 +289,34 @@ export class IBJVendor extends BaseVendor {
       this.log(`Error checking login status: ${error}`, 'error');
       return false;
     }
+  }
+
+  /**
+   * Wait for user to manually enter OTP code
+   * Polls the OTP input field until it has a 6-digit value
+   */
+  private async waitForManualOtpEntry(page: Page, timeoutMs: number): Promise<string> {
+    const startTime = Date.now();
+    const pollInterval = 2000;
+
+    while (Date.now() - startTime < timeoutMs) {
+      // Check if OTP input has a value
+      const otpValue = await page.evaluate(`
+        (function() {
+          var input = document.querySelector('${SELECTORS.otpInput}');
+          return input ? input.value : '';
+        })()
+      `);
+
+      // OTP should be 6 digits
+      if (otpValue && /^\d{6}$/.test(otpValue as string)) {
+        return otpValue as string;
+      }
+
+      await this.wait(pollInterval);
+    }
+
+    throw new Error('Timeout waiting for manual OTP entry');
   }
 
   /**
