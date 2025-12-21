@@ -117,17 +117,8 @@ export class IBJVendor extends BaseVendor {
     // Initialize Gmail OTP service
     this.gmailOtpService = new GmailOtpService(otpEmail);
 
-    // Step 1: Navigate to login page
-    this.log('Step 1: Navigating to login page');
-    try {
-      await page.goto(this.loginUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000,
-      });
-      await this.wait(2000);
-    } catch (error) {
-      this.log(`Navigation warning: ${(error as Error).message}`, 'warn');
-    }
+    // Step 1: Check current page (download route already navigated here)
+    this.log('Step 1: On login page');
     await this.takeScreenshot(page, 'login-page');
 
     // Step 2: Wait for user to complete manual login
@@ -197,7 +188,8 @@ export class IBJVendor extends BaseVendor {
       let otpCode: string;
 
       // Try Gmail API first, fall back to manual entry
-      let manualEntry = false;
+      let otpFromGmail = false;
+      let alreadySubmitted = false;
       try {
         this.log('Attempting to fetch OTP from Gmail API...');
         const otpResult = await this.gmailOtpService!.waitForOtp(
@@ -206,6 +198,7 @@ export class IBJVendor extends BaseVendor {
           5000   // Check every 5 seconds
         );
         otpCode = otpResult.code;
+        otpFromGmail = true;
         this.log(`OTP received via Gmail API: ${otpCode}`);
       } catch (gmailError) {
         this.log(`Gmail API not available: ${(gmailError as Error).message}`, 'warn');
@@ -220,31 +213,53 @@ export class IBJVendor extends BaseVendor {
         this.log('='.repeat(60));
         this.log('');
 
-        // Wait for user to enter OTP manually
-        otpCode = await this.waitForManualOtpEntry(page, 120000);
-        this.log(`Manual OTP entry detected: ${otpCode}`);
-        manualEntry = true;
+        // Wait for user to enter OTP manually (or submit)
+        const manualResult = await this.waitForManualOtpEntry(page, 120000);
+        otpCode = manualResult.code;
+        alreadySubmitted = manualResult.alreadySubmitted;
+
+        if (alreadySubmitted) {
+          this.log('User already submitted OTP, skipping to verification');
+        } else {
+          this.log(`Manual OTP entry detected: ${otpCode} - waiting for you to click submit...`);
+          // Wait for user to submit (page navigation)
+          const submitResult = await this.waitForManualOtpEntry(page, 60000);
+          alreadySubmitted = submitResult.alreadySubmitted;
+          if (!alreadySubmitted) {
+            this.log('Timeout waiting for submit, will submit automatically');
+          }
+        }
       }
 
-      // Step 5: Enter OTP code (only if fetched via Gmail API)
-      if (!manualEntry) {
+      // Step 5 & 6: Enter and submit OTP (only if OTP came from Gmail API)
+      if (otpFromGmail && !alreadySubmitted) {
         this.log('Step 5: Entering OTP code');
         await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+        await this.takeScreenshot(page, 'otp-entered');
+
+        // Step 6: Submit OTP
+        this.log('Step 6: Submitting OTP');
+        const submitButtons = await page.$$('input[type="submit"]');
+        if (submitButtons.length > 0) {
+          await submitButtons[0].click();
+        }
+
+        // Wait for login to complete
+        await this.wait(5000);
+      } else if (!alreadySubmitted) {
+        // Manual entry detected but not submitted yet - submit for user
+        this.log('Step 5: OTP already entered manually');
+        this.log('Step 6: Submitting OTP');
+        const submitButtons = await page.$$('input[type="submit"]');
+        if (submitButtons.length > 0) {
+          await submitButtons[0].click();
+        }
+        await this.wait(5000);
       } else {
-        this.log('Step 5: OTP already entered manually, skipping');
+        // Already submitted, just wait for page to settle
+        this.log('Step 5-6: User already submitted OTP');
+        await this.wait(3000);
       }
-      await this.takeScreenshot(page, 'otp-entered');
-
-      // Step 6: Submit OTP
-      this.log('Step 6: Submitting OTP');
-      // Find the submit button on OTP verification page
-      const submitButtons = await page.$$('input[type="submit"]');
-      if (submitButtons.length > 0) {
-        await submitButtons[0].click();
-      }
-
-      // Wait for login to complete
-      await this.wait(5000);
       await this.takeScreenshot(page, 'after-otp-submit');
     }
 
@@ -294,23 +309,42 @@ export class IBJVendor extends BaseVendor {
   /**
    * Wait for user to manually enter OTP code
    * Polls the OTP input field until it has a 6-digit value
+   * Also detects if user already submitted (page navigated away)
+   * Returns { code, alreadySubmitted }
    */
-  private async waitForManualOtpEntry(page: Page, timeoutMs: number): Promise<string> {
+  private async waitForManualOtpEntry(page: Page, timeoutMs: number): Promise<{ code: string; alreadySubmitted: boolean }> {
     const startTime = Date.now();
     const pollInterval = 2000;
 
     while (Date.now() - startTime < timeoutMs) {
-      // Check if OTP input has a value
-      const otpValue = await page.evaluate(`
-        (function() {
-          var input = document.querySelector('${SELECTORS.otpInput}');
-          return input ? input.value : '';
-        })()
-      `);
+      try {
+        // Check if page has navigated away from OTP page (user already submitted)
+        const currentUrl = page.url();
+        if (!currentUrl.includes('/otp') && !currentUrl.includes('/verification')) {
+          this.log(`Page navigated to ${currentUrl} - user already submitted OTP`);
+          return { code: '', alreadySubmitted: true };
+        }
 
-      // OTP should be 6 digits
-      if (otpValue && /^\d{6}$/.test(otpValue as string)) {
-        return otpValue as string;
+        // Check if OTP input has a value
+        const otpValue = await page.evaluate(`
+          (function() {
+            var input = document.querySelector('${SELECTORS.otpInput}');
+            return input ? input.value : '';
+          })()
+        `);
+
+        // OTP should be 6 digits
+        if (otpValue && /^\d{6}$/.test(otpValue as string)) {
+          return { code: otpValue as string, alreadySubmitted: false };
+        }
+      } catch (error) {
+        // If we get an error evaluating, the page might have navigated
+        const errorMsg = (error as Error).message;
+        if (errorMsg.includes('context') || errorMsg.includes('navigation') || errorMsg.includes('detached')) {
+          this.log('Page context changed - user likely submitted OTP');
+          return { code: '', alreadySubmitted: true };
+        }
+        this.log(`Error checking OTP input: ${errorMsg}`, 'warn');
       }
 
       await this.wait(pollInterval);
