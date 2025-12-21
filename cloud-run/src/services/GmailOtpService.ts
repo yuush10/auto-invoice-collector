@@ -7,11 +7,35 @@
  * two-factor authentication (like IBJ).
  *
  * Authentication:
- * - Uses Application Default Credentials (ADC) or service account
- * - Requires Gmail API read access via domain-wide delegation
+ * - Uses service account with domain-wide delegation
+ * - Requires Gmail API read access scope authorized in Google Admin Console
  * - The service account must impersonate the target email user
+ *
+ * Setup Requirements:
+ * 1. Create a service account in GCP with domain-wide delegation enabled
+ * 2. Download the service account key JSON file
+ * 3. In Google Admin Console (admin.google.com):
+ *    - Go to Security > Access and data control > API controls > Domain-wide Delegation
+ *    - Add the service account's Client ID with scope: https://www.googleapis.com/auth/gmail.readonly
+ * 4. Store the service account key in Secret Manager as 'gmail-service-account'
  */
 import { google, gmail_v1 } from 'googleapis';
+
+/**
+ * Service account key structure
+ */
+export interface ServiceAccountKey {
+  type: string;
+  project_id: string;
+  private_key_id: string;
+  private_key: string;
+  client_email: string;
+  client_id: string;
+  auth_uri: string;
+  token_uri: string;
+  auth_provider_x509_cert_url: string;
+  client_x509_cert_url: string;
+}
 
 /**
  * Configuration for OTP email search
@@ -48,13 +72,16 @@ export class GmailOtpService {
   private gmail: gmail_v1.Gmail;
   private initialized = false;
   private targetEmail: string;
+  private serviceAccountSecretName: string;
 
   /**
    * Create a new Gmail OTP Service
    * @param targetEmail The email address to check for OTP emails (e.g., info@executive-bridal.com)
+   * @param serviceAccountSecretName Name of the secret in Secret Manager containing the service account key JSON
    */
-  constructor(targetEmail: string) {
+  constructor(targetEmail: string, serviceAccountSecretName: string = 'gmail-service-account') {
     this.targetEmail = targetEmail;
+    this.serviceAccountSecretName = serviceAccountSecretName;
     this.gmail = google.gmail({ version: 'v1' });
   }
 
@@ -70,24 +97,63 @@ export class GmailOtpService {
     console.log(`[GmailOtpService] Initializing for ${this.targetEmail}`);
 
     try {
-      // Use Google Auth Library with domain-wide delegation
-      const auth = new google.auth.GoogleAuth({
+      // Get service account key from Secret Manager
+      const serviceAccountKey = await this.getServiceAccountKey();
+
+      // Create JWT client with domain-wide delegation
+      const jwtClient = new google.auth.JWT({
+        email: serviceAccountKey.client_email,
+        key: serviceAccountKey.private_key,
         scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
-        // For domain-wide delegation, we need to impersonate the target user
-        clientOptions: {
-          subject: this.targetEmail,
-        },
+        subject: this.targetEmail, // User to impersonate
       });
 
-      const authClient = await auth.getClient();
-      this.gmail = google.gmail({ version: 'v1', auth: authClient as any });
+      // Authorize the client
+      await jwtClient.authorize();
+
+      this.gmail = google.gmail({ version: 'v1', auth: jwtClient });
       this.initialized = true;
 
-      console.log('[GmailOtpService] Initialized successfully');
+      console.log('[GmailOtpService] Initialized successfully with domain-wide delegation');
+      console.log(`[GmailOtpService] Service account: ${serviceAccountKey.client_email}`);
+      console.log(`[GmailOtpService] Impersonating: ${this.targetEmail}`);
     } catch (error) {
       console.error('[GmailOtpService] Initialization failed:', error);
       throw new Error(`Failed to initialize Gmail API: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Get service account key from Secret Manager
+   */
+  private async getServiceAccountKey(): Promise<ServiceAccountKey> {
+    console.log(`[GmailOtpService] Fetching service account key from Secret Manager: ${this.serviceAccountSecretName}`);
+
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || '';
+    if (!projectId) {
+      throw new Error('Project ID not configured. Set GOOGLE_CLOUD_PROJECT environment variable.');
+    }
+
+    // Use the secret manager client directly to get raw JSON
+    const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
+    const client = new SecretManagerServiceClient();
+    const name = `projects/${projectId}/secrets/${this.serviceAccountSecretName}/versions/latest`;
+
+    const [version] = await client.accessSecretVersion({ name });
+    if (!version.payload?.data) {
+      throw new Error(`Secret ${this.serviceAccountSecretName} has no data`);
+    }
+
+    const secretData = version.payload.data.toString();
+    const serviceAccountKey = JSON.parse(secretData) as ServiceAccountKey;
+
+    // Validate required fields
+    if (!serviceAccountKey.client_email || !serviceAccountKey.private_key) {
+      throw new Error(`Service account key missing required fields (client_email, private_key)`);
+    }
+
+    console.log(`[GmailOtpService] Service account loaded: ${serviceAccountKey.client_email}`);
+    return serviceAccountKey;
   }
 
   /**

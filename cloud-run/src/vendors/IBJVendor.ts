@@ -6,14 +6,20 @@
  * - Login URL: https://www.ibjapan.com/div/logins
  * - Vendor Key: ibj
  *
- * Authentication Flow (Multi-Step with OTP):
- * 1. Navigate to login page
- * 2. Enter user ID and password
- * 3. Click login button
- * 4. Click submit to request OTP via email
- * 5. Wait for OTP email at configured email address
- * 6. Enter OTP code
- * 7. Submit OTP for verification
+ * Authentication Flow (Hybrid Manual/Automated with OTP):
+ * IBJ uses reCAPTCHA Enterprise, so we use a hybrid approach:
+ *
+ * MANUAL STEPS (user interaction required):
+ * 1. Navigate to login page (automated)
+ * 2. User enters credentials manually
+ * 3. User solves reCAPTCHA
+ * 4. User clicks login button
+ *
+ * AUTOMATED STEPS (after user logs in):
+ * 5. Detect OTP request page, click submit to send OTP email
+ * 6. Fetch OTP from Gmail API
+ * 7. Enter OTP code automatically
+ * 8. Submit OTP for verification
  *
  * Note: IBJ does not support cookie-based session persistence.
  * Each login requires fresh credentials and OTP verification.
@@ -79,92 +85,147 @@ export class IBJVendor extends BaseVendor {
   private readonly defaultOtpEmail = 'info@executive-bridal.com';
 
   /**
-   * Login to IBJ portal with OTP verification
+   * Login to IBJ portal with OTP verification (Hybrid Manual/Automated)
    *
-   * This is a complex multi-step login flow:
-   * 1. Enter credentials
-   * 2. Request OTP via email
-   * 3. Wait for OTP email
-   * 4. Enter and verify OTP
+   * IBJ uses reCAPTCHA Enterprise, requiring manual user interaction for:
+   * - Entering credentials
+   * - Solving CAPTCHA
+   * - Clicking login button
+   *
+   * Automation handles:
+   * - Navigation to login page
+   * - Detecting when user has logged in
+   * - OTP request and entry
+   * - Invoice download
    */
   async login(page: Page, credentials: VendorCredentials): Promise<void> {
     const ibjCreds = credentials as IBJCredentials;
     const otpEmail = ibjCreds.otpEmail || this.defaultOtpEmail;
 
-    this.log('Starting IBJ login with OTP verification');
+    this.log('Starting IBJ login (Hybrid Manual/Automated mode)');
     this.log(`OTP will be sent to: ${otpEmail}`);
+    this.log('');
+    this.log('='.repeat(60));
+    this.log('MANUAL ACTION REQUIRED:');
+    this.log('1. Enter your IBJ credentials in the browser');
+    this.log('2. Solve the reCAPTCHA if prompted');
+    this.log('3. Click the green "ログイン" button');
+    this.log('Automation will continue after you complete login...');
+    this.log('='.repeat(60));
+    this.log('');
 
     // Initialize Gmail OTP service
     this.gmailOtpService = new GmailOtpService(otpEmail);
 
     // Step 1: Navigate to login page
     this.log('Step 1: Navigating to login page');
-    await this.navigateTo(page, this.loginUrl);
+    try {
+      await page.goto(this.loginUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000,
+      });
+      await this.wait(2000);
+    } catch (error) {
+      this.log(`Navigation warning: ${(error as Error).message}`, 'warn');
+    }
     await this.takeScreenshot(page, 'login-page');
 
-    // Step 2: Enter user ID
-    this.log('Step 2: Entering user ID');
-    await this.waitForSelector(page, SELECTORS.loginUserId);
-    await this.typeWithDelay(page, SELECTORS.loginUserId, credentials.username);
+    // Step 2: Wait for user to complete manual login
+    // We detect this by waiting for the URL to change away from /logins
+    // or for the OTP send button to appear
+    this.log('Step 2: Waiting for user to complete manual login...');
+    this.log('(You have 120 seconds to enter credentials and click login)');
 
-    // Step 3: Enter password
-    this.log('Step 3: Entering password');
-    await this.waitForSelector(page, SELECTORS.loginPassword);
-    await this.typeWithDelay(page, SELECTORS.loginPassword, credentials.password);
+    const loginStartTime = Date.now();
+    const loginTimeout = 120000; // 2 minutes for manual login
+    let userLoggedIn = false;
 
-    await this.takeScreenshot(page, 'credentials-entered');
+    while (Date.now() - loginStartTime < loginTimeout) {
+      const currentUrl = page.url();
 
-    // Step 4: Click login button
-    this.log('Step 4: Clicking login button');
-    // The login button is an <a> tag, not a form submit
-    await this.waitForSelector(page, SELECTORS.loginButton);
-    await page.click(SELECTORS.loginButton);
+      // Check if we've moved past the login page
+      if (!currentUrl.includes('/logins')) {
+        this.log(`Detected page change: ${currentUrl}`);
+        userLoggedIn = true;
+        break;
+      }
 
-    // Wait for navigation to OTP request page
-    await this.wait(3000);
-    await this.takeScreenshot(page, 'after-login-click');
+      // Also check if OTP send button appeared (means login succeeded)
+      const otpButtonExists = await this.elementExists(page, SELECTORS.otpSendButton);
+      if (otpButtonExists) {
+        this.log('Detected OTP request page');
+        userLoggedIn = true;
+        break;
+      }
 
-    // Step 5: Click submit to send OTP email
-    this.log('Step 5: Requesting OTP via email');
-    await this.waitForSelector(page, SELECTORS.otpSendButton);
-    await page.click(SELECTORS.otpSendButton);
+      // Check if we're already fully logged in (my page visible)
+      const myPageExists = await this.elementExists(page, SELECTORS.myPageMenu);
+      if (myPageExists) {
+        this.log('Detected main dashboard - already logged in');
+        return; // Already fully logged in, no OTP needed
+      }
 
-    // Wait for the OTP to be sent
-    await this.wait(3000);
-    await this.takeScreenshot(page, 'otp-sent');
-
-    // Step 6: Wait for OTP email and extract code
-    this.log('Step 6: Waiting for OTP email');
-    let otpCode: string;
-    try {
-      const otpResult = await this.gmailOtpService.waitForOtp(
-        IBJ_OTP_CONFIG,
-        90000, // 90 seconds timeout
-        5000   // Check every 5 seconds
-      );
-      otpCode = otpResult.code;
-      this.log(`OTP received: ${otpCode} (from email at ${otpResult.timestamp.toISOString()})`);
-    } catch (error) {
-      this.log(`Failed to get OTP: ${(error as Error).message}`, 'error');
-      await this.takeScreenshot(page, 'otp-timeout');
-      throw new Error(`OTP verification failed: ${(error as Error).message}`);
+      await this.wait(2000);
     }
 
-    // Step 7: Enter OTP code
-    this.log('Step 7: Entering OTP code');
-    await this.waitForSelector(page, SELECTORS.otpInput);
-    await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+    if (!userLoggedIn) {
+      await this.takeScreenshot(page, 'login-timeout');
+      throw new Error('Login timeout: Please complete the manual login within 120 seconds');
+    }
 
-    await this.takeScreenshot(page, 'otp-entered');
+    await this.takeScreenshot(page, 'after-manual-login');
+    await this.wait(2000);
 
-    // Step 8: Submit OTP
-    this.log('Step 8: Submitting OTP');
-    await this.waitForSelector(page, SELECTORS.otpSubmitButton);
-    await page.click(SELECTORS.otpSubmitButton);
+    // Step 3: Click submit to send OTP email (if on OTP request page)
+    const currentUrl = page.url();
+    this.log(`Current URL after login: ${currentUrl}`);
 
-    // Wait for login to complete
-    await this.wait(5000);
-    await this.takeScreenshot(page, 'after-otp-submit');
+    // Check if we need to request OTP
+    const otpSendButtonExists = await this.elementExists(page, SELECTORS.otpSendButton);
+    if (otpSendButtonExists) {
+      this.log('Step 3: Requesting OTP via email');
+      await page.click(SELECTORS.otpSendButton);
+      await this.wait(3000);
+      await this.takeScreenshot(page, 'otp-requested');
+    }
+
+    // Step 4: Check if we're on OTP input page
+    const otpInputExists = await this.elementExists(page, SELECTORS.otpInput);
+    if (otpInputExists) {
+      this.log('Step 4: Waiting for OTP email');
+
+      let otpCode: string;
+      try {
+        const otpResult = await this.gmailOtpService.waitForOtp(
+          IBJ_OTP_CONFIG,
+          90000, // 90 seconds timeout
+          5000   // Check every 5 seconds
+        );
+        otpCode = otpResult.code;
+        this.log(`OTP received: ${otpCode} (from email at ${otpResult.timestamp.toISOString()})`);
+      } catch (error) {
+        this.log(`Failed to get OTP: ${(error as Error).message}`, 'error');
+        await this.takeScreenshot(page, 'otp-timeout');
+        throw new Error(`OTP verification failed: ${(error as Error).message}`);
+      }
+
+      // Step 5: Enter OTP code
+      this.log('Step 5: Entering OTP code');
+      await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+      await this.takeScreenshot(page, 'otp-entered');
+
+      // Step 6: Submit OTP
+      this.log('Step 6: Submitting OTP');
+      // Find the submit button on OTP verification page
+      const submitButtons = await page.$$('input[type="submit"]');
+      if (submitButtons.length > 0) {
+        await submitButtons[0].click();
+      }
+
+      // Wait for login to complete
+      await this.wait(5000);
+      await this.takeScreenshot(page, 'after-otp-submit');
+    }
 
     // Verify login success
     const loggedIn = await this.isLoggedIn(page);
