@@ -307,6 +307,116 @@ export class IBJVendor extends BaseVendor {
   }
 
   /**
+   * Capture a file download using CDP (Chrome DevTools Protocol)
+   * This is more reliable than response interception for file downloads.
+   */
+  private async captureDownloadWithCDP(page: Page, targetMonth: string): Promise<DownloadedFile | null> {
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+
+    // Create temp download directory
+    const downloadDir = path.join(os.tmpdir(), `ibj-download-${Date.now()}`);
+    fs.mkdirSync(downloadDir, { recursive: true });
+    this.log(`Created temp download directory: ${downloadDir}`);
+
+    try {
+      // Get CDP session
+      const client = await page.createCDPSession();
+
+      // Set download behavior to save files
+      await client.send('Page.setDownloadBehavior', {
+        behavior: 'allow',
+        downloadPath: downloadDir,
+      });
+
+      this.log('CDP download behavior configured');
+
+      // Click the download button
+      await page.click(SELECTORS.downloadButton);
+      this.log('Clicked download button');
+
+      // Wait for file to appear in download directory
+      const maxWaitTime = 30000;
+      const pollInterval = 500;
+      let elapsedTime = 0;
+      let downloadedFilename: string | null = null;
+
+      while (elapsedTime < maxWaitTime) {
+        const filesInDir = fs.readdirSync(downloadDir);
+
+        // Look for PDF files (ignore .crdownload partial files)
+        const pdfFiles = filesInDir.filter(f => f.endsWith('.pdf'));
+        if (pdfFiles.length > 0) {
+          downloadedFilename = pdfFiles[0];
+          this.log(`Found downloaded file: ${downloadedFilename}`);
+          break;
+        }
+
+        // Also check for any completed downloads (non-.crdownload)
+        const completedFiles = filesInDir.filter(f => !f.endsWith('.crdownload'));
+        if (completedFiles.length > 0) {
+          downloadedFilename = completedFiles[0];
+          this.log(`Found completed download: ${downloadedFilename}`);
+          break;
+        }
+
+        await this.wait(pollInterval);
+        elapsedTime += pollInterval;
+      }
+
+      if (!downloadedFilename) {
+        this.log('Download timeout - no file appeared in download directory');
+        return null;
+      }
+
+      // Read the downloaded file
+      const filePath = path.join(downloadDir, downloadedFilename);
+      const buffer = fs.readFileSync(filePath);
+      const base64 = buffer.toString('base64');
+
+      // Generate proper filename with billing month
+      const billingMonth = targetMonth
+        ? `${targetMonth.substring(0, 4)}-${targetMonth.substring(4, 6)}`
+        : undefined;
+      const filename = billingMonth
+        ? `IBJ-請求書-${billingMonth}.pdf`
+        : downloadedFilename;
+
+      // Create the downloaded file object
+      const downloadedFile: DownloadedFile = {
+        filename,
+        base64,
+        mimeType: 'application/pdf',
+        documentType: 'invoice',
+        fileSize: buffer.length,
+        billingMonth,
+        serviceName: 'IBJ',
+      };
+
+      // Cleanup downloaded file
+      fs.unlinkSync(filePath);
+      this.log('Cleaned up downloaded file');
+
+      return downloadedFile;
+    } catch (error) {
+      this.log(`CDP download capture error: ${(error as Error).message}`, 'error');
+      return null;
+    } finally {
+      // Cleanup temp directory
+      try {
+        const fs = await import('fs');
+        if (fs.existsSync(downloadDir)) {
+          fs.rmSync(downloadDir, { recursive: true, force: true });
+          this.log('Cleaned up temp download directory');
+        }
+      } catch (cleanupError) {
+        this.log(`Cleanup error: ${(cleanupError as Error).message}`, 'warn');
+      }
+    }
+  }
+
+  /**
    * Wait for user to manually enter OTP code
    * Polls the OTP input field until it has a 6-digit value
    * Also detects if user already submitted (page navigated away)
@@ -497,63 +607,49 @@ export class IBJVendor extends BaseVendor {
 
     await this.takeScreenshot(page, 'month-selected');
 
-    // Step 4: Click download button
+    // Step 4: Click download button using CDP download capture
     this.log('Step 4: Clicking download button');
     await this.waitForSelector(page, SELECTORS.downloadButton);
 
-    // Intercept the download
-    const file = await this.interceptDownload(
-      page,
-      async () => {
-        await page.click(SELECTORS.downloadButton);
-      },
-      {
-        urlPatterns: [/\.pdf$/i, /download/i, /billing/i, /invoice/i],
-        mimeTypes: ['application/pdf', 'application/octet-stream'],
-        timeout: 30000,
-      }
-    );
+    // Use CDP to capture the download
+    const file = await this.captureDownloadWithCDP(page, targetMonth);
 
     if (file) {
-      // Format billing month as YYYY-MM
-      const billingMonth = targetMonth
-        ? `${targetMonth.substring(0, 4)}-${targetMonth.substring(4, 6)}`
-        : undefined;
-
-      file.billingMonth = billingMonth;
-      file.documentType = 'invoice';
-      file.serviceName = 'IBJ';
-
-      // Generate a proper filename
-      if (billingMonth) {
-        file.filename = `IBJ-請求書-${billingMonth}.pdf`;
-      }
-
       files.push(file);
       this.log(`Downloaded: ${file.filename} (${file.fileSize} bytes)`);
     } else {
-      this.log('Download interception failed, trying alternative method');
+      this.log('CDP download capture failed, trying response interception');
 
-      // Alternative: Check if the page itself is the PDF
-      const contentType = await page.evaluate(`document.contentType`) as string | undefined;
-      if (contentType === 'application/pdf') {
-        this.log('Page is a PDF, capturing directly');
-        try {
-          const pagePdf = await this.pageToPdf(page);
-          const billingMonth = targetMonth
-            ? `${targetMonth.substring(0, 4)}-${targetMonth.substring(4, 6)}`
-            : new Date().toISOString().slice(0, 7);
-
-          pagePdf.billingMonth = billingMonth;
-          pagePdf.documentType = 'invoice';
-          pagePdf.serviceName = 'IBJ';
-          pagePdf.filename = `IBJ-請求書-${billingMonth}.pdf`;
-
-          files.push(pagePdf);
-          this.log(`Captured PDF: ${pagePdf.filename}`);
-        } catch (error) {
-          this.log(`Failed to capture PDF: ${error}`, 'error');
+      // Fallback: Try response interception
+      const interceptedFile = await this.interceptDownload(
+        page,
+        async () => {
+          await page.click(SELECTORS.downloadButton);
+        },
+        {
+          urlPatterns: [/\.pdf$/i, /download/i, /billing/i, /invoice/i],
+          mimeTypes: ['application/pdf', 'application/octet-stream'],
+          timeout: 15000,
         }
+      );
+
+      if (interceptedFile) {
+        const billingMonth = targetMonth
+          ? `${targetMonth.substring(0, 4)}-${targetMonth.substring(4, 6)}`
+          : undefined;
+
+        interceptedFile.billingMonth = billingMonth;
+        interceptedFile.documentType = 'invoice';
+        interceptedFile.serviceName = 'IBJ';
+
+        if (billingMonth) {
+          interceptedFile.filename = `IBJ-請求書-${billingMonth}.pdf`;
+        }
+
+        files.push(interceptedFile);
+        this.log(`Downloaded via interception: ${interceptedFile.filename} (${interceptedFile.fileSize} bytes)`);
+      } else {
+        this.log('All download methods failed', 'error');
       }
     }
 
