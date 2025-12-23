@@ -458,14 +458,49 @@ Add these to Script Properties for Phase 3:
 | `VENDOR_CLOUD_RUN_URL` | Cloud Run URL | Endpoint for vendor automation |
 | `INVOKER_SERVICE_ACCOUNT` | SA email | Service account with run.invoker role |
 
-### Monthly Trigger Setup
+### Vendor Schedule Trigger Setup
 
 ```javascript
-// Run once to set up monthly vendor processing
-setupMonthlyVendorTrigger();
+// Run once to set up daily vendor processing trigger
+setupDailyVendorTrigger();
+
+// View current schedule configuration
+showVendorSchedule();
 ```
 
-This creates a trigger that runs on the 3rd of each month at 10 AM JST.
+This creates a daily trigger at 8:00 AM JST that processes vendors based on their scheduled day:
+
+| Vendor | Day | Time | Description |
+|--------|-----|------|-------------|
+| Aitemasu | 1st | 8:00 AM JST | Invoice available on 1st |
+| Google Ads | 4th | 8:00 AM JST | Invoice available ~3rd-5th |
+| IBJ | 11th | 8:00 AM JST | Invoice available ~10th |
+
+### Manual Vendor Processing
+
+```javascript
+// Process a specific vendor manually (regardless of schedule)
+processVendorManually('aitemasu');
+processVendorManually('google-ads');
+processVendorManually('ibj');
+```
+
+### Modifying the Schedule
+
+Edit `src/config.ts` to change vendor schedules:
+
+```typescript
+export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
+  'aitemasu': { day: 1, hour: 8, enabled: true },
+  'google-ads': { day: 4, hour: 8, enabled: true },
+  'ibj': { day: 11, hour: 8, enabled: true },
+};
+```
+
+After modifying, rebuild and push:
+```bash
+npm run build && npm run push
+```
 
 ### Troubleshooting Vendor Automation
 
