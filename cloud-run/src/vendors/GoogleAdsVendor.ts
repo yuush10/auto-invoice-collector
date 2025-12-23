@@ -191,7 +191,15 @@ export class GoogleAdsVendor extends BaseVendor {
         }
       }
     } catch (error) {
-      const errorMessage = (error as Error).message;
+      // Handle various error formats from google-ads-api
+      let errorMessage: string;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        errorMessage = JSON.stringify(error, null, 2);
+      } else {
+        errorMessage = String(error);
+      }
       this.log(`API error: ${errorMessage}`, 'error');
 
       // Provide helpful error messages
@@ -201,6 +209,8 @@ export class GoogleAdsVendor extends BaseVendor {
         throw new Error('Invalid argument. Check customer ID and billing setup ID.');
       } else if (errorMessage.includes('UNAUTHENTICATED')) {
         throw new Error('Authentication failed. Refresh token may be expired.');
+      } else if (errorMessage.includes('DEVELOPER_TOKEN')) {
+        throw new Error('Developer token issue. Test account tokens can only access test accounts.');
       } else {
         throw new Error(`Google Ads API error: ${errorMessage}`);
       }
