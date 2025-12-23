@@ -5,7 +5,7 @@
  * It contains the trigger functions that are called by GAS.
  */
 
-import { Config, SERVICES } from './config';
+import { Config, SERVICES, VENDOR_SCHEDULE, VENDOR_CONFIGS } from './config';
 import { GmailSearcher } from './modules/gmail/GmailSearcher';
 import { AttachmentExtractor } from './modules/gmail/AttachmentExtractor';
 import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
@@ -919,7 +919,6 @@ import { processVendorInvoices as processVendorInvoicesImpl, ProcessResult as Ve
 import { DownloadOptions as VendorDownloadOptions } from './modules/vendors/VendorClient';
 import { getCookieExpirationTracker } from './modules/vendors/CookieExpirationTracker';
 import { VendorAuthNotification, getRecoveryInstructions } from './types/vendor';
-import { VENDOR_CONFIGS } from './config';
 
 /**
  * Process vendor invoices: download from Cloud Run and upload to Google Drive
@@ -1441,25 +1440,39 @@ function downloadAitemasuInvoices(): void {
 (globalThis as any).downloadAitemasuInvoices = downloadAitemasuInvoices;
 
 /**
- * Process all configured vendor invoices
- * This is called by the monthly trigger
+ * Process vendors scheduled for today
+ * This is called by the daily trigger at 8:00 AM JST
+ * Checks VENDOR_SCHEDULE to determine which vendors to process
  */
-function processAllVendorInvoices(): void {
-  processAllVendorInvoicesAsync();
+function processScheduledVendors(): void {
+  processScheduledVendorsAsync();
 }
 
-async function processAllVendorInvoicesAsync(): Promise<void> {
-  AppLogger.info('[Vendor] Starting monthly vendor invoice processing');
+async function processScheduledVendorsAsync(): Promise<void> {
+  const now = new Date();
+  const today = now.getDate();
+  const currentHour = now.getHours();
 
-  // List of vendors to process automatically
-  // Note: Only enable vendors that have been fully tested
-  const enabledVendors = ['aitemasu']; // Add more as they become ready: 'ibj', 'google-ads'
+  AppLogger.info(`[Vendor] Checking scheduled vendors for day ${today} at ${currentHour}:00`);
+
+  // Find vendors scheduled for today that are enabled
+  const vendorsToProcess = Object.entries(VENDOR_SCHEDULE)
+    .filter(([_, schedule]) => schedule.day === today && schedule.enabled)
+    .map(([vendorKey, _]) => vendorKey);
+
+  if (vendorsToProcess.length === 0) {
+    AppLogger.info(`[Vendor] No vendors scheduled for day ${today}`);
+    Logger.log(`No vendors scheduled for day ${today}`);
+    return;
+  }
+
+  AppLogger.info(`[Vendor] Processing vendors scheduled for day ${today}: ${vendorsToProcess.join(', ')}`);
 
   const results: Array<{ vendor: string; result: string; processResult?: VendorProcessResult }> = [];
   const notifier = new Notifier(Config.getAdminEmail());
   const cookieTracker = getCookieExpirationTracker();
 
-  for (const vendorKey of enabledVendors) {
+  for (const vendorKey of vendorsToProcess) {
     try {
       AppLogger.info(`[Vendor] Processing vendor: ${vendorKey}`);
       const processResult = processVendorInvoicesImpl(vendorKey);
@@ -1529,49 +1542,128 @@ async function processAllVendorInvoicesAsync(): Promise<void> {
   }
 
   // Log summary
-  AppLogger.info('[Vendor] Monthly vendor processing complete');
+  AppLogger.info('[Vendor] Scheduled vendor processing complete');
   for (const r of results) {
     AppLogger.info(`[Vendor] ${r.vendor}: ${r.result}`);
     Logger.log(`${r.vendor}: ${r.result}`);
   }
 
   // Send notification email with results
-  try {
-    const summary = results.map(r => `• ${r.vendor}: ${r.result}`).join('\n');
-    MailApp.sendEmail({
-      to: Config.getAdminEmail(),
-      subject: '[Auto Invoice Collector] Monthly Vendor Invoice Processing Complete',
-      body: `月次ベンダー請求書処理が完了しました。\n\n処理結果:\n${summary}`
-    });
-  } catch (error) {
-    AppLogger.error('[Vendor] Failed to send notification', error as Error);
+  if (results.length > 0) {
+    try {
+      const summary = results.map(r => `• ${r.vendor}: ${r.result}`).join('\n');
+      MailApp.sendEmail({
+        to: Config.getAdminEmail(),
+        subject: `[Auto Invoice Collector] Vendor Invoice Processing - Day ${today}`,
+        body: `ベンダー請求書処理が完了しました。\n\n処理対象: ${vendorsToProcess.join(', ')}\n\n処理結果:\n${summary}`
+      });
+    } catch (error) {
+      AppLogger.error('[Vendor] Failed to send notification', error as Error);
+    }
   }
 }
-(globalThis as any).processAllVendorInvoices = processAllVendorInvoices;
+(globalThis as any).processScheduledVendors = processScheduledVendors;
 
 /**
- * Setup monthly trigger for vendor invoice downloads
- * Run this once to set up automatic monthly vendor processing
- * Runs on the 3rd of each month at 10 AM JST
- * (Earlier than journal processing on the 5th)
+ * Process a specific vendor manually (regardless of schedule)
+ * Useful for testing or manual intervention
+ * @param vendorKey Vendor identifier (e.g., 'aitemasu', 'ibj', 'google-ads')
  */
-function setupMonthlyVendorTrigger(): void {
-  // Remove existing triggers for processAllVendorInvoices function only
+function processVendorManually(vendorKey: string): string {
+  AppLogger.info(`[Vendor] Manual processing requested for: ${vendorKey}`);
+
+  // Verify vendor exists in schedule
+  if (!VENDOR_SCHEDULE[vendorKey]) {
+    const message = `Unknown vendor: ${vendorKey}. Available vendors: ${Object.keys(VENDOR_SCHEDULE).join(', ')}`;
+    Logger.log(message);
+    return message;
+  }
+
+  try {
+    const processResult = processVendorInvoicesImpl(vendorKey);
+
+    if (processResult.success) {
+      const message = `Success: ${processResult.filesUploaded?.length || 0} files uploaded`;
+      Logger.log(`[${vendorKey}] ${message}`);
+      return message;
+    } else {
+      const message = `Failed: ${processResult.errors.join(', ')}`;
+      Logger.log(`[${vendorKey}] ${message}`);
+      return message;
+    }
+  } catch (error) {
+    const message = `Error: ${(error as Error).message}`;
+    AppLogger.error(`[Vendor] Manual processing failed for ${vendorKey}`, error as Error);
+    Logger.log(`[${vendorKey}] ${message}`);
+    return message;
+  }
+}
+(globalThis as any).processVendorManually = processVendorManually;
+
+/**
+ * Show current vendor schedule configuration
+ */
+function showVendorSchedule(): void {
+  Logger.log('=== Vendor Schedule Configuration ===');
+  Logger.log('');
+  for (const [vendorKey, schedule] of Object.entries(VENDOR_SCHEDULE)) {
+    const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+    const vendorName = vendorConfig?.vendorName || vendorKey;
+    const status = schedule.enabled ? '✓ Enabled' : '✗ Disabled';
+    Logger.log(`${vendorName} (${vendorKey}):`);
+    Logger.log(`  Day: ${schedule.day} of each month`);
+    Logger.log(`  Time: ${schedule.hour}:00 JST`);
+    Logger.log(`  Status: ${status}`);
+    Logger.log('');
+  }
+}
+(globalThis as any).showVendorSchedule = showVendorSchedule;
+
+/**
+ * Setup daily trigger for scheduled vendor invoice downloads
+ * Run this once to set up automatic daily vendor processing
+ * Runs daily at 8:00 AM JST and processes vendors based on VENDOR_SCHEDULE
+ *
+ * Schedule:
+ *   - Day 1: Aitemasu
+ *   - Day 4: Google Ads
+ *   - Day 11: IBJ
+ */
+function setupDailyVendorTrigger(): void {
+  // Remove existing triggers for vendor processing
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => {
-    if (trigger.getHandlerFunction() === 'processAllVendorInvoices') {
+    const handlerFunction = trigger.getHandlerFunction();
+    if (handlerFunction === 'processScheduledVendors' ||
+        handlerFunction === 'processAllVendorInvoices') {
       ScriptApp.deleteTrigger(trigger);
     }
   });
 
-  // Create new monthly trigger on the 3rd at 10 AM
-  ScriptApp.newTrigger('processAllVendorInvoices')
+  // Create new daily trigger at 8 AM
+  ScriptApp.newTrigger('processScheduledVendors')
     .timeBased()
-    .onMonthDay(3)
-    .atHour(10)
+    .everyDays(1)
+    .atHour(8)
     .create();
 
-  Logger.log('Monthly vendor trigger created successfully (3rd of each month at 10 AM)');
+  Logger.log('Daily vendor trigger created successfully (8:00 AM JST)');
+  Logger.log('Schedule:');
+  for (const [vendorKey, schedule] of Object.entries(VENDOR_SCHEDULE)) {
+    if (schedule.enabled) {
+      Logger.log(`  Day ${schedule.day}: ${vendorKey}`);
+    }
+  }
+}
+(globalThis as any).setupDailyVendorTrigger = setupDailyVendorTrigger;
+
+/**
+ * @deprecated Use setupDailyVendorTrigger instead
+ * Kept for backward compatibility
+ */
+function setupMonthlyVendorTrigger(): void {
+  Logger.log('WARNING: setupMonthlyVendorTrigger is deprecated. Use setupDailyVendorTrigger instead.');
+  setupDailyVendorTrigger();
 }
 (globalThis as any).setupMonthlyVendorTrigger = setupMonthlyVendorTrigger;
 

@@ -93,6 +93,29 @@ export const SERVICES: ServiceConfig[] = [
 ];
 
 /**
+ * Vendor schedule configuration for automated processing
+ * Each vendor is triggered on a specific day of the month
+ */
+export interface VendorSchedule {
+  /** Day of month to trigger (1-31) */
+  day: number;
+  /** Hour to trigger (0-23, JST) */
+  hour: number;
+  /** Whether this vendor is enabled for automated processing */
+  enabled: boolean;
+}
+
+/**
+ * Vendor schedule mapping
+ * Key: vendorKey, Value: schedule configuration
+ */
+export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
+  'aitemasu': { day: 1, hour: 8, enabled: true },
+  'google-ads': { day: 4, hour: 8, enabled: true },
+  'ibj': { day: 11, hour: 8, enabled: true },
+};
+
+/**
  * Vendor configurations for portal automation (Phase 3)
  * These vendors require login automation to download invoices
  */
