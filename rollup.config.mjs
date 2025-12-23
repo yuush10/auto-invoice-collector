@@ -172,8 +172,20 @@ function downloadAitemasuInvoices() {
   return globalThis.downloadAitemasuInvoices();
 }
 
-function processAllVendorInvoices() {
-  return globalThis.processAllVendorInvoices();
+function processScheduledVendors() {
+  return globalThis.processScheduledVendors();
+}
+
+function processVendorManually(vendorKey) {
+  return globalThis.processVendorManually(vendorKey);
+}
+
+function showVendorSchedule() {
+  return globalThis.showVendorSchedule();
+}
+
+function setupDailyVendorTrigger() {
+  return globalThis.setupDailyVendorTrigger();
 }
 
 function setupMonthlyVendorTrigger() {
