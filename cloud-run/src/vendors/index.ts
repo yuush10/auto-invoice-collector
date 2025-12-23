@@ -18,12 +18,14 @@ export {
 // Vendor implementations
 export { AitemasuVendor } from './AitemasuVendor';
 export { IBJVendor } from './IBJVendor';
-// export { GoogleAdsVendor } from './GoogleAdsVendor'; // Phase 3.4
+export { GoogleAdsVendor } from './GoogleAdsVendor';
 
 // Register vendors on module load
 import { AitemasuVendor } from './AitemasuVendor';
 import { IBJVendor } from './IBJVendor';
+import { GoogleAdsVendor } from './GoogleAdsVendor';
 import { registerVendor } from './VendorRegistry';
 
 registerVendor(new AitemasuVendor());
 registerVendor(new IBJVendor());
+registerVendor(new GoogleAdsVendor());

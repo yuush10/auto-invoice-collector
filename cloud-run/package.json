@@ -24,6 +24,7 @@
     "@google-cloud/secret-manager": "^5.0.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
+    "google-ads-api": "^21.0.1",
     "googleapis": "^169.0.0",
     "puppeteer": "^21.6.0"
   },
