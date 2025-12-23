@@ -162,6 +162,56 @@ function clearTestDraftData() {
 function debugDraftData() {
   return globalThis.debugDraftData();
 }
+
+// Vendor invoice functions (Phase 3)
+function downloadVendorInvoices(vendorKey, optionsJson) {
+  return globalThis.downloadVendorInvoices(vendorKey, optionsJson);
+}
+
+function downloadAitemasuInvoices() {
+  return globalThis.downloadAitemasuInvoices();
+}
+
+function processScheduledVendors() {
+  return globalThis.processScheduledVendors();
+}
+
+function processVendorManually(vendorKey) {
+  return globalThis.processVendorManually(vendorKey);
+}
+
+function showVendorSchedule() {
+  return globalThis.showVendorSchedule();
+}
+
+function setupDailyVendorTrigger() {
+  return globalThis.setupDailyVendorTrigger();
+}
+
+function setupMonthlyVendorTrigger() {
+  return globalThis.setupMonthlyVendorTrigger();
+}
+
+// Auth failure handling functions (Phase 3.4)
+function checkVendorCookieStatus() {
+  return globalThis.checkVendorCookieStatus();
+}
+
+function updateVendorCookieMetadata(vendorKey, expirationDays) {
+  return globalThis.updateVendorCookieMetadata(vendorKey, expirationDays);
+}
+
+function testAuthFailureNotification(vendorKey) {
+  return globalThis.testAuthFailureNotification(vendorKey);
+}
+
+function testAuthFailureNotification_Aitemasu() {
+  return globalThis.testAuthFailureNotification_Aitemasu();
+}
+
+function updateCookie_Aitemasu_30days() {
+  return globalThis.updateCookie_Aitemasu_30days();
+}
 `
   },
   plugins: [

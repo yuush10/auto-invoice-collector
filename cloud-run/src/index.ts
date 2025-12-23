@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import convertRouter from './routes/convert';
+import downloadRouter from './routes/download';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -14,11 +15,13 @@ app.use(express.json({ limit: '10mb' })); // Allow large HTML payloads
 
 // Routes
 app.use('/', convertRouter);
+app.use('/', downloadRouter);
 
 // Start server
 app.listen(port, () => {
-  console.log(`[SERVER] Email-to-PDF service listening on port ${port}`);
+  console.log(`[SERVER] Invoice Automation Service listening on port ${port}`);
   console.log(`[SERVER] Environment: ${process.env.NODE_ENV || 'production'}`);
+  console.log(`[SERVER] Available endpoints: /convert, /download, /health`);
 });
 
 // Graceful shutdown

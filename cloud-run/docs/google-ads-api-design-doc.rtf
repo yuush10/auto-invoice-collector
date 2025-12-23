@@ -1,0 +1,112 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0\fswiss Helvetica;}{\f1\fmodern Courier;}}
+{\colortbl;\red0\green0\blue0;\red0\green0\blue128;}
+
+\f0\fs28\b Google Ads API Integration Design Document\b0\fs22\par
+\par
+
+\fs24\b 1. Overview\b0\fs22\par
+\par
+\b Application Name:\b0  Auto Invoice Collector\par
+\b Company:\b0  Executive Bridal (https://executive-bridal.com/)\par
+\b Purpose:\b0  Automated retrieval and organization of Google Ads billing invoices for accounting purposes\par
+\par
+
+\fs24\b 2. Business Context\b0\fs22\par
+\par
+Executive Bridal is a matchmaking service that uses Google Ads for customer acquisition. We need to collect monthly invoices from Google Ads for:\par
+\bullet  Accounting and bookkeeping\par
+\bullet  Tax compliance (Japanese electronic bookkeeping law)\par
+\bullet  Expense tracking and reporting\par
+\par
+
+\fs24\b 3. API Usage\b0\fs22\par
+\par
+\b 3.1 API Methods Used\b0\par
+\par
+\trowd\trgaph100
+\cellx2500\cellx5000\cellx9000
+\b Service\cell Method\cell Purpose\cell\b0\row
+\trowd\trgaph100
+\cellx2500\cellx5000\cellx9000
+InvoiceService\cell ListInvoices\cell Retrieve list of invoices for a billing period\cell\row
+\par
+\b 3.2 Data Retrieved\b0\par
+\par
+We only retrieve billing/invoice data:\par
+\bullet  Invoice ID\par
+\bullet  Issue date\par
+\bullet  Invoice amount\par
+\bullet  PDF URL for invoice download\par
+\par
+\b We do NOT access or modify:\b0\par
+\bullet  Campaign data\par
+\bullet  Ad performance metrics\par
+\bullet  Keyword data\par
+\bullet  Audience data\par
+\bullet  Any other advertising data\par
+\par
+
+\fs24\b 4. Technical Architecture\b0\fs22\par
+\par
+\f1\fs20
+Cloud Run (Node.js) --> Google Ads API (InvoiceService) --> Google Drive (Storage)\par
+\f0\fs22
+\par
+\b 4.1 Process Flow\b0\par
+\par
+1. Application authenticates using OAuth 2.0 refresh token\par
+2. Calls InvoiceService.ListInvoices for target billing month\par
+3. Downloads invoice PDF from returned URL\par
+4. Stores PDF in Google Drive with organized folder structure\par
+5. Logs processing result for audit trail\par
+\par
+
+\fs24\b 5. Authentication & Security\b0\fs22\par
+\par
+\b 5.1 OAuth 2.0 Configuration\b0\par
+\par
+\bullet  \b Grant Type:\b0  Refresh Token\par
+\bullet  \b Scopes:\b0  https://www.googleapis.com/auth/adwords (read-only usage)\par
+\bullet  \b Token Storage:\b0  Google Cloud Secret Manager (encrypted)\par
+\par
+\b 5.2 Security Measures\b0\par
+\par
+\bullet  All credentials stored in Secret Manager, never in code\par
+\bullet  Application runs in isolated Cloud Run container\par
+\bullet  No user-facing interface (internal tool only)\par
+\bullet  Audit logging for all API calls\par
+\bullet  Minimal API scope (billing data only)\par
+\par
+
+\fs24\b 6. Rate Limits & Quotas\b0\fs22\par
+\par
+\bullet  \b Expected API calls:\b0  1-2 per month (monthly invoice retrieval)\par
+\bullet  \b Frequency:\b0  Once monthly, scheduled via Cloud Scheduler\par
+\bullet  \b Volume:\b0  Single account, approximately 12 invoices per year\par
+\par
+
+\fs24\b 7. Data Retention\b0\fs22\par
+\par
+\bullet  Invoice PDFs stored in Google Drive\par
+\bullet  Processing logs retained for 7 years (Japanese tax compliance)\par
+\bullet  No Google Ads data cached or stored beyond invoice PDFs\par
+\par
+
+\fs24\b 8. User Access\b0\fs22\par
+\par
+\bullet  \b Access Type:\b0  Internal users only\par
+\bullet  \b Users:\b0  Company accounting staff (1-2 people)\par
+\bullet  \b No external/public access\b0\par
+\par
+
+\fs24\b 9. Contact Information\b0\fs22\par
+\par
+\b Developer:\b0  Yu Ushio\par
+\b Email:\b0  info@executive-bridal.com\par
+\b Website:\b0  https://executive-bridal.com/\par
+\par
+\line
+\i Document Version: 1.0\par
+Last Updated: December 2024\i0\par
+}

@@ -2,6 +2,9 @@
  * Type definitions for the Auto Invoice Collector
  */
 
+// Re-export vendor types
+export * from './vendor';
+
 export type DocumentType = 'invoice' | 'receipt' | 'unknown';
 
 export type ProcessingStatus = 'success' | 'error' | 'needs-review';

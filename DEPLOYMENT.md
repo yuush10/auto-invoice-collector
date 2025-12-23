@@ -357,6 +357,166 @@ clasp tail-logs --watch
 - Review free tier limits
 - Expected cost: ~¥2/month for 50 invoices
 
+## Phase 3: Vendor Portal Automation
+
+### Overview
+
+Phase 3 adds automated invoice downloads from vendor portals that require authentication (e.g., Aitemasu, IBJ, Google Ads). This uses Cloud Run with Puppeteer for browser automation.
+
+### Authentication Management
+
+Vendor portal automation uses stored cookies for authentication. When authentication fails (session expired, CAPTCHA required, MFA, etc.), the system:
+
+1. **Detects the auth failure type** - Categorizes the error (session expired, CAPTCHA, MFA, etc.)
+2. **Captures screenshots** - Takes screenshots of the blocked page for debugging
+3. **Sends detailed notification** - Emails admin with failure type, screenshot, and recovery steps
+4. **Tracks cookie expiration** - Warns before cookies expire
+
+### Credential Refresh Procedure
+
+When you receive an auth failure notification:
+
+1. **Open the vendor website in your browser**
+2. **Log in manually** with your credentials
+3. **Complete any verification** (CAPTCHA, MFA, etc.)
+4. **Export cookies** using a browser extension:
+   - Recommended: [Cookie-Editor](https://cookie-editor.cgagnier.ca/) or [EditThisCookie](https://www.editthiscookie.com/)
+   - Export in JSON format
+5. **Update Secret Manager**:
+   ```bash
+   # Update the cookie secret in GCP Secret Manager
+   gcloud secrets versions add VENDOR_COOKIES_<VENDOR_KEY> --data-file=cookies.json
+   ```
+6. **Record the update** (optional, for expiration tracking):
+   ```javascript
+   // Run in Apps Script editor
+   updateVendorCookieMetadata('aitemasu', 30); // 30 days until expiration
+   ```
+
+### Cookie Expiration Monitoring
+
+The system tracks cookie metadata in a Google Sheet and warns before expiration.
+
+**Check cookie status:**
+```javascript
+// Run in Apps Script editor
+checkVendorCookieStatus();
+```
+
+**Output example:**
+```
+=== Vendor Cookie Status Check ===
+
+Aitemasu (aitemasu):
+  Valid: true
+  Days until expiration: 15
+  Should warn: false
+  Status: Cookie有効（残り15日）
+
+IBJ (ibj):
+  Valid: true
+  Days until expiration: 5
+  Should warn: true
+  Status: Cookieは5日後に期限切れになります
+```
+
+**Update after cookie refresh:**
+```javascript
+// After manually refreshing cookies, record the update
+updateVendorCookieMetadata('aitemasu', 30); // Expires in 30 days
+```
+
+### Testing Auth Failure Notifications
+
+To verify notifications are working:
+
+```javascript
+// Run in Apps Script editor
+testAuthFailureNotification('aitemasu');
+```
+
+This sends a test notification email with sample auth failure data.
+
+### Auth Failure Types
+
+| Type | Description | Recovery |
+|------|-------------|----------|
+| `session_expired` | Login session timed out | Re-login and export cookies |
+| `login_required` | Not logged in | Login and export cookies |
+| `captcha_required` | CAPTCHA verification needed | Complete CAPTCHA, then export cookies |
+| `mfa_required` | Multi-factor auth required | Complete MFA, then export cookies |
+| `cookie_expired` | Cookie past expiration date | Re-login and export cookies |
+| `credentials_invalid` | Password changed or wrong | Verify credentials, then login |
+| `account_locked` | Account suspended | Contact vendor support |
+
+### Vendor-Specific Properties
+
+Add these to Script Properties for Phase 3:
+
+| Property Name | Value | Description |
+|---------------|-------|-------------|
+| `VENDOR_CLOUD_RUN_URL` | Cloud Run URL | Endpoint for vendor automation |
+| `INVOKER_SERVICE_ACCOUNT` | SA email | Service account with run.invoker role |
+
+### Vendor Schedule Trigger Setup
+
+```javascript
+// Run once to set up daily vendor processing trigger
+setupDailyVendorTrigger();
+
+// View current schedule configuration
+showVendorSchedule();
+```
+
+This creates a daily trigger at 8:00 AM JST that processes vendors based on their scheduled day:
+
+| Vendor | Day | Time | Description |
+|--------|-----|------|-------------|
+| Aitemasu | 1st | 8:00 AM JST | Invoice available on 1st |
+| Google Ads | 4th | 8:00 AM JST | Invoice available ~3rd-5th |
+| IBJ | 11th | 8:00 AM JST | Invoice available ~10th |
+
+### Manual Vendor Processing
+
+```javascript
+// Process a specific vendor manually (regardless of schedule)
+processVendorManually('aitemasu');
+processVendorManually('google-ads');
+processVendorManually('ibj');
+```
+
+### Modifying the Schedule
+
+Edit `src/config.ts` to change vendor schedules:
+
+```typescript
+export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
+  'aitemasu': { day: 1, hour: 8, enabled: true },
+  'google-ads': { day: 4, hour: 8, enabled: true },
+  'ibj': { day: 11, hour: 8, enabled: true },
+};
+```
+
+After modifying, rebuild and push:
+```bash
+npm run build && npm run push
+```
+
+### Troubleshooting Vendor Automation
+
+**Auth failures:**
+- Check notification email for screenshot
+- Follow recovery instructions in the email
+- Update cookies in Secret Manager
+
+**Cookie expiration:**
+- Run `checkVendorCookieStatus()` to check all vendors
+- Update cookies before expiration to avoid failures
+
+**No screenshots in notification:**
+- Cloud Run may not have captured screenshots
+- Check Cloud Run logs for Puppeteer errors
+
 ## Next Steps
 
 After successful MVP deployment:
