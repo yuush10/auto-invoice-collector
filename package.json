@@ -6,7 +6,7 @@
   "main": "dist/bundle.js",
   "scripts": {
     "build": "rollup -c rollup.config.mjs",
-    "push": "npm run build && clasp push",
+    "push": "clasp push",
     "watch": "rollup -c rollup.config.mjs -w",
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --config jest.config.cjs --watch",
@@ -14,7 +14,7 @@
     "logout": "clasp logout",
     "open": "clasp open-script",
     "logs": "clasp tail-logs",
-    "deploy": "npm run build && clasp push && clasp create-deployment"
+    "deploy": "clasp push && clasp create-deployment"
   },
   "keywords": [
     "google-apps-script",
@@ -26,7 +26,6 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@google/clasp": "^2.4.2",
     "@rollup/plugin-commonjs": "^28.0.2",
     "@rollup/plugin-node-resolve": "^15.3.0",
     "@rollup/plugin-typescript": "^12.1.2",
@@ -37,6 +36,5 @@
     "ts-jest": "^29.2.5",
     "tslib": "^2.8.1",
     "typescript": "^5.7.2"
-  },
-  "dependencies": {}
+  }
 }
