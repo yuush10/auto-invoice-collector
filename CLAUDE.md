@@ -207,7 +207,10 @@ gh pr create --base develop/phase4 \
 # 5. After PR approval, merge to develop branch
 gh pr merge <PR-number> --squash --delete-branch
 
-# 6. Repeat steps 2-5 for each sub-issue
+# 5.5. IMPORTANT: Manually close the issue (GitHub doesn't auto-close for non-main branches)
+gh issue close <issue-number> --comment "Completed in PR #<PR-number>, merged to develop/phase4"
+
+# 6. Repeat steps 2-5.5 for each sub-issue
 
 # 7. After ALL sub-issues complete and tested, merge develop to main
 git checkout develop/phase4 && git pull
@@ -223,6 +226,10 @@ git checkout main && git pull
 git branch -d develop/phase4
 git push origin --delete develop/phase4
 ```
+
+**IMPORTANT: Manual Issue Closing Required**
+
+GitHub only auto-closes issues when PRs merge to the DEFAULT branch (usually `main`). When merging to development branches, you MUST manually close issues using `gh issue close` as shown in step 5.5 above.
 
 **When to Use:**
 - Phases with 3+ related sub-issues
@@ -251,6 +258,15 @@ Types: feat, fix, docs, style, refactor, test, chore
 ### 4. Subagent Coordination
 
 When delegating work to subagents (parallel Claude instances):
+
+**CRITICAL: Automatic Worktree Creation**
+
+Claude and subagents MUST proactively create worktrees when:
+- Multiple concurrent tasks may modify overlapping files
+- Delegating work to subagents (always use worktrees)
+- Working on a task while another task is in progress in the main directory
+
+Do NOT wait for explicit user request - create worktrees automatically to prevent conflicts.
 
 **Before Delegation:**
 1. Create dedicated worktree: `git worktree add ../auto-invoice-collector-{name} -b {branch}`
@@ -669,6 +685,15 @@ gh issue close 5 --comment "Implemented in PR #12"
 
 # Reopen if needed
 gh issue reopen 5
+```
+
+**IMPORTANT: Manual Closing for Development Branch Merges**
+
+GitHub only auto-closes issues when PRs merge to the DEFAULT branch (usually `main`).
+When merging to development branches (e.g., `develop/phase4`), you MUST manually close issues:
+
+```bash
+gh issue close <issue-number> --comment "Completed in PR #<PR-number>, merged to develop/phase-name"
 ```
 
 ## Quick Reference
