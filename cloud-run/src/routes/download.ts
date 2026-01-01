@@ -468,8 +468,9 @@ router.post('/download', async (req: Request, res: Response) => {
             filename: file.filename,
           });
 
-          // Determine document type using detector
+          // Determine document type using detector (prioritize Gemini's classification)
           const docType = DocTypeDetector.determineDocType({
+            geminiDocType: extracted.docType,
             hasReceiptInContent: extracted.hasReceiptInContent || false,
             hasInvoiceInContent: extracted.hasInvoiceInContent || false,
             hasReceiptInFilename: DocTypeDetector.hasReceiptKeywords(file.filename),

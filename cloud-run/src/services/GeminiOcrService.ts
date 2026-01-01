@@ -176,36 +176,37 @@ export class DocTypeDetector {
 
   /**
    * Determine document type from detection flags
-   * For vendor downloads, we primarily rely on PDF content
+   * Priority: Gemini classification > exclusive content match > exclusive filename match > receipt default
    */
   static determineDocType(flags: {
+    geminiDocType?: DocumentType;
     hasReceiptInContent: boolean;
     hasInvoiceInContent: boolean;
     hasReceiptInFilename?: boolean;
     hasInvoiceInFilename?: boolean;
   }): DocumentType {
-    // Check PDF content first (most authoritative)
-    if (flags.hasInvoiceInContent && !flags.hasReceiptInContent) {
-      return 'invoice';
+    // 1. Trust Gemini's classification first (most reliable)
+    if (flags.geminiDocType && flags.geminiDocType !== 'unknown') {
+      return flags.geminiDocType;
     }
+
+    // 2. Exclusive content match
     if (flags.hasReceiptInContent && !flags.hasInvoiceInContent) {
       return 'receipt';
     }
-
-    // Check filename
-    if (flags.hasInvoiceInFilename && !flags.hasReceiptInFilename) {
+    if (flags.hasInvoiceInContent && !flags.hasReceiptInContent) {
       return 'invoice';
     }
+
+    // 3. Exclusive filename match
     if (flags.hasReceiptInFilename && !flags.hasInvoiceInFilename) {
       return 'receipt';
     }
-
-    // If both or neither found, prefer invoice
-    if (flags.hasInvoiceInContent || flags.hasInvoiceInFilename) {
+    if (flags.hasInvoiceInFilename && !flags.hasReceiptInFilename) {
       return 'invoice';
     }
 
-    // Default to receipt
+    // 4. Default to receipt (safer for 電子帳簿保存法 compliance)
     return 'receipt';
   }
 
