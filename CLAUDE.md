@@ -292,6 +292,11 @@ npm install
 git worktree remove ../auto-invoice-collector-{name}
 ```
 
+**CRITICAL: Worktree cleanup is MANDATORY.** Before considering any implementation task complete, you MUST:
+1. Ensure changes are merged (PR approved and merged)
+2. Remove the worktree using the command above or `/worktree remove`
+3. Never leave stale worktrees - they clutter the workspace and cause confusion
+
 ### 5. Subagent Coordination
 
 When delegating work to subagents (parallel Claude instances):
@@ -328,7 +333,7 @@ Claude MUST proactively invoke project skills when context matches their descrip
 
 | Skill | Trigger Context | Example |
 |-------|-----------------|---------|
-| `/worktree` | **Before ANY implementation**, when creating/listing/removing worktrees | Use before starting any feature/fix work |
+| `/worktree` | **Before ANY implementation** and **after completing work** (for cleanup) | Use to create workspace AND to remove after merge |
 | `/quality-check` | Before any commit, after implementation | Use instead of manual `npm test` |
 | `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
 | `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
@@ -339,6 +344,7 @@ Claude MUST proactively invoke project skills when context matches their descrip
 2. **Before commits**: Always invoke `/quality-check` skill
 3. **For deployments**: Always invoke `/deploy` skill
 4. **For vendor auth checks**: Invoke `/vendor-status` when relevant
+5. **After work complete**: Always invoke `/worktree remove` to clean up the worktree
 
 **Why This Matters:**
 - Skills contain project-specific logic and checks
