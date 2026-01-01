@@ -138,11 +138,15 @@ Closes #N" \
 gh pr list
 gh pr merge <PR-number> --squash --delete-branch
 
-# 6. Cleanup after merge
+# 6. Cleanup after merge (MANDATORY)
 git checkout main && git pull
-git branch -d feature/description      # Delete local branch
-git push origin --delete feature/description  # Delete remote branch (if not auto-deleted)
 git fetch --prune                      # Clean up remote tracking branches
+git branch -d feature/description      # Delete local branch
+
+# 7. VERIFY remote branch deletion (REQUIRED)
+git branch -r | grep feature/description  # Should return nothing
+# If branch still exists, delete manually:
+# git push origin --delete feature/description
 ```
 
 **Branch Naming:**
@@ -156,9 +160,10 @@ git fetch --prune                      # Clean up remote tracking branches
 - Always create PR via `gh pr create`
 - Include clear title and description
 - Reference related issues with `Closes #N`
-- Merge via `gh pr merge` with `--squash` flag
-- Use `--delete-branch` to auto-cleanup remote branch
-- Always run `git fetch --prune` after merging to clean up stale remote-tracking branches
+- Merge via `gh pr merge` with `--squash --delete-branch` flags
+- **ALWAYS verify** remote branch deletion after merge with `git branch -r`
+- Run `git fetch --prune` to sync local tracking refs
+- If remote branch persists, delete with `git push origin --delete <branch>`
 - Never use `git merge` locally and push to main
 
 ### 2.1 Multi-Phase Development (Development Branches)
@@ -220,13 +225,17 @@ gh pr create --base main --head develop/phase4 \
   --body "Merges all Phase 4 sub-issues..."
 
 # 8. After final PR approval
-gh pr merge <PR-number> --squash
+gh pr merge <PR-number> --squash --delete-branch
 
-# 9. Cleanup
+# 9. Cleanup and VERIFY (MANDATORY)
 git checkout main && git pull
-git branch -d develop/phase4
-git push origin --delete develop/phase4
-git fetch --prune                      # Always prune stale remote-tracking branches
+git fetch --prune
+git branch -d develop/phase4           # Delete local branch
+
+# 10. VERIFY remote branch deletion (REQUIRED)
+git branch -r | grep develop/phase4    # Should return nothing
+# If branch still exists, delete manually:
+# git push origin --delete develop/phase4
 ```
 
 **IMPORTANT: Manual Issue Closing Required**
@@ -817,5 +826,6 @@ Always:
 2. Create feature branch before any changes
 3. Create PR via CLI (`gh pr create`)
 4. Reference issues in commits (`Closes #N`)
-5. Merge via CLI (`gh pr merge`)
-6. Clean up branches after merge
+5. Merge via CLI (`gh pr merge --delete-branch`)
+6. Clean up local branches after merge
+7. **VERIFY remote branch deletion** (`git branch -r`)
