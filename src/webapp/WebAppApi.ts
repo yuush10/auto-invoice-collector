@@ -480,7 +480,7 @@ export class WebAppApi {
         existing.promptType,
         updates.promptText || existing.promptText,
         user,
-        updates.notes
+        updates.notes ?? existing.notes
       );
     } catch (error) {
       AppLogger.error('Error updating prompt', error as Error);
