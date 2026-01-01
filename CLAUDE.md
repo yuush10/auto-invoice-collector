@@ -257,21 +257,47 @@ footer (optional)
 
 Types: feat, fix, docs, style, refactor, test, chore
 
-### 4. Subagent Coordination
+### 4. Worktree Workflow (MANDATORY)
+
+**CRITICAL: Create a worktree before starting ANY implementation work.**
+
+This is mandatory regardless of whether parallel work is occurring. Benefits:
+- Clean isolation for each feature
+- Easy context switching without stashing
+- Enables parallel work if needed later
+- Low overhead (one command)
+
+**Quick Start:**
+```bash
+# Use the /worktree skill (preferred)
+/worktree create for issue #N
+
+# Or manually:
+git worktree add ../auto-invoice-collector-{name} -b {type}/{issue}-{description}
+cd ../auto-invoice-collector-{name}
+npm install
+```
+
+**Naming Convention:**
+
+| Purpose | Directory | Branch |
+|---------|-----------|--------|
+| Feature | `-feature-{issue}` | `feature/{issue}-{desc}` |
+| Bug fix | `-fix-{issue}` | `fix/{issue}-{desc}` |
+| Docs | `-docs-{issue}` | `docs/{issue}-{desc}` |
+
+**After Work Complete:**
+```bash
+# From main repo directory
+git worktree remove ../auto-invoice-collector-{name}
+```
+
+### 5. Subagent Coordination
 
 When delegating work to subagents (parallel Claude instances):
 
-**CRITICAL: Automatic Worktree Creation**
-
-Claude and subagents MUST proactively create worktrees when:
-- Multiple concurrent tasks may modify overlapping files
-- Delegating work to subagents (always use worktrees)
-- Working on a task while another task is in progress in the main directory
-
-Do NOT wait for explicit user request - create worktrees automatically to prevent conflicts.
-
 **Before Delegation:**
-1. Create dedicated worktree: `git worktree add ../auto-invoice-collector-{name} -b {branch}`
+1. Create dedicated worktree using `/worktree` skill (see Section 4)
 2. Define clear scope and acceptance criteria
 3. Provide worktree path to subagent
 
@@ -294,7 +320,7 @@ Do NOT wait for explicit user request - create worktrees automatically to preven
 4. All checks pass → proceed to commit
 ```
 
-### 5. Skill Auto-Invocation
+### 6. Skill Auto-Invocation
 
 Claude MUST proactively invoke project skills when context matches their descriptions. Do NOT manually execute commands that a skill is designed to handle.
 
@@ -302,15 +328,15 @@ Claude MUST proactively invoke project skills when context matches their descrip
 
 | Skill | Trigger Context | Example |
 |-------|-----------------|---------|
+| `/worktree` | **Before ANY implementation**, when creating/listing/removing worktrees | Use before starting any feature/fix work |
 | `/quality-check` | Before any commit, after implementation | Use instead of manual `npm test` |
 | `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
-| `/worktree` | When creating, listing, or removing worktrees | Use instead of manual `git worktree` commands |
 | `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
 
 **Required Behavior:**
 
-1. **Before commits**: Always invoke `/quality-check` skill first
-2. **For worktree operations**: Always invoke `/worktree` skill
+1. **Before implementations**: Always invoke `/worktree` skill first to create isolated workspace
+2. **Before commits**: Always invoke `/quality-check` skill
 3. **For deployments**: Always invoke `/deploy` skill
 4. **For vendor auth checks**: Invoke `/vendor-status` when relevant
 
