@@ -158,6 +158,7 @@ git fetch --prune                      # Clean up remote tracking branches
 - Reference related issues with `Closes #N`
 - Merge via `gh pr merge` with `--squash` flag
 - Use `--delete-branch` to auto-cleanup remote branch
+- Always run `git fetch --prune` after merging to clean up stale remote-tracking branches
 - Never use `git merge` locally and push to main
 
 ### 2.1 Multi-Phase Development (Development Branches)
@@ -225,6 +226,7 @@ gh pr merge <PR-number> --squash
 git checkout main && git pull
 git branch -d develop/phase4
 git push origin --delete develop/phase4
+git fetch --prune                      # Always prune stale remote-tracking branches
 ```
 
 **IMPORTANT: Manual Issue Closing Required**
