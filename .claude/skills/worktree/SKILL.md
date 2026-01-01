@@ -16,6 +16,15 @@ Manages git worktrees for parallel feature development on different branches.
 - Reviewing PRs while maintaining current work
 - Delegating work to subagents
 
+## Proactive Worktree Creation
+
+Claude and subagents should AUTOMATICALLY create worktrees (without waiting for user request) when:
+- Starting work that may conflict with other ongoing tasks
+- Multiple parallel implementations are in progress
+- Delegating any work to subagents
+
+**Default behavior:** When in doubt, create a worktree. It's safer to have isolated work than to risk conflicts.
+
 ## Create Worktree
 
 ### For Feature Development
