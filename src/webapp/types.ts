@@ -95,6 +95,15 @@ export interface ApproveRequest {
 }
 
 /**
+ * Result of approving a draft
+ * Includes the approved draft and any warnings that occurred during processing
+ */
+export interface ApproveResult {
+  draft: DraftDetail;
+  warnings?: string[];
+}
+
+/**
  * Result of bulk approve operation
  */
 export interface BulkApproveResult {
