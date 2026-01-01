@@ -294,6 +294,31 @@ Do NOT wait for explicit user request - create worktrees automatically to preven
 4. All checks pass → proceed to commit
 ```
 
+### 5. Skill Auto-Invocation
+
+Claude MUST proactively invoke project skills when context matches their descriptions. Do NOT manually execute commands that a skill is designed to handle.
+
+**Project Skills and Trigger Contexts:**
+
+| Skill | Trigger Context | Example |
+|-------|-----------------|---------|
+| `/quality-check` | Before any commit, after implementation | Use instead of manual `npm test` |
+| `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
+| `/worktree` | When creating, listing, or removing worktrees | Use instead of manual `git worktree` commands |
+| `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
+
+**Required Behavior:**
+
+1. **Before commits**: Always invoke `/quality-check` skill first
+2. **For worktree operations**: Always invoke `/worktree` skill
+3. **For deployments**: Always invoke `/deploy` skill
+4. **For vendor auth checks**: Invoke `/vendor-status` when relevant
+
+**Why This Matters:**
+- Skills contain project-specific logic and checks
+- Skills ensure consistent workflows across sessions
+- Skills may include steps that manual commands miss
+
 ## Google Apps Script Development
 
 ### Project Structure
