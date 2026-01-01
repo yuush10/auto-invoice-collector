@@ -31,11 +31,23 @@ import { PromptType } from './types/prompt';
  * Main function that processes new invoices from Gmail
  * This function is called by the time-based trigger
  *
- * Note: GAS trigger handlers should be synchronous. The internal async work
- * is handled by mainAsync() which is awaited properly.
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
  */
 function main(): void {
-  mainAsync();
+  mainAsync().catch(error => {
+    AppLogger.error('Unhandled error in main processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'System',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
 }
 
 /**
@@ -599,11 +611,23 @@ function setupMonthlyJournalTrigger(): void {
  * Monthly journal processing trigger handler
  * This function is called by the monthly time-based trigger
  *
- * Note: GAS trigger handlers should be synchronous. The internal async work
- * is handled by processMonthlyJournalsAsync() which is awaited properly.
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
  */
 function processMonthlyJournals(): void {
-  processMonthlyJournalsAsync();
+  processMonthlyJournalsAsync().catch(error => {
+    AppLogger.error('Unhandled error in monthly journal processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'MonthlyJournals',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
 }
 
 /**
@@ -1443,9 +1467,24 @@ function downloadAitemasuInvoices(): void {
  * Process vendors scheduled for today
  * This is called by the daily trigger at 8:00 AM JST
  * Checks VENDOR_SCHEDULE to determine which vendors to process
+ *
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
  */
 function processScheduledVendors(): void {
-  processScheduledVendorsAsync();
+  processScheduledVendorsAsync().catch(error => {
+    AppLogger.error('Unhandled error in scheduled vendor processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'VendorScheduler',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
 }
 
 async function processScheduledVendorsAsync(): Promise<void> {
