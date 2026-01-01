@@ -1,0 +1,69 @@
+name: Feature Request
+description: Propose a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Request
+        Please fill out the sections below to help us understand your proposal.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the feature or enhancement you'd like
+      placeholder: What problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How would you implement this feature?
+      placeholder: Describe your proposed approach
+    validations:
+      required: false
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Project Phase
+      description: Which phase does this relate to?
+      options:
+        - Phase 1 (Gmail PDF Extraction)
+        - Phase 2 (Email Body Conversion)
+        - Phase 3 (Vendor Portal Automation)
+        - Phase 4 (Journal Entry Generation)
+        - Infrastructure/Tooling
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests to Pass
+      description: Define acceptance criteria as tests
+      value: |
+        ### Unit Tests
+        - [ ] `test_name` - Description
+
+        ### Manual Tests
+        - [ ] Test scenario description
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: quality-checklist
+    attributes:
+      label: Quality Checklist
+      description: Confirm the following before implementation
+      options:
+        - label: This feature aligns with project goals
+          required: true
+        - label: I have checked for existing issues
+          required: true
+        - label: Tests are defined above
+          required: true
