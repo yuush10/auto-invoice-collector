@@ -659,12 +659,12 @@ const emailContext = {
 Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)
 ──────────────   ──────────────     ──────────────      ──────────────     ──────────────
 雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成
-✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        🔄 IN PROGRESS     ✅ COMPLETED
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        ✅ COMPLETED       ✅ COMPLETED
 
 ├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet
 ├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         │  ✅ Aitemasu      ├─ Gemini仕訳提案
-└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  📋 IBJ           ├─ ReviewWebApp
-                 └─ 二重処理防止                        │  📋 Google Ads    └─ 変更履歴管理
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  ✅ IBJ           ├─ ReviewWebApp
+                 └─ 二重処理防止                        │  ✅ Google Ads    └─ 変更履歴管理
                                                        ├─ Secret Manager
                                                        └─ Gemini OCR連携
 ```
@@ -736,9 +736,9 @@ Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase
 
 ---
 
-### Phase 3: URLダウンロード（15h）- 🔄 IN PROGRESS
+### Phase 3: URLダウンロード（15h）- ✅ COMPLETED
 
-**Status**: Aitemasu vendor completed, infrastructure ready
+**Status**: All vendors (Aitemasu, IBJ, Google Ads) completed and operational
 
 #### Phase 3.1: Infrastructure（4h）- ✅ COMPLETED
 
@@ -771,8 +771,23 @@ GAS downloadAitemasuInvoices()
     → Upload to Google Drive with proper naming
 ```
 
-#### Phase 3.2: IBJ Vendor - 📋 TODO
-#### Phase 3.4: Google Ads Vendor - 📋 TODO
+#### Phase 3.2: IBJ Vendor（4h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| IBJ browser automation | ✅ | cloud-run/src/vendors/IBJVendor.ts |
+| Cookie-based authentication | ✅ | Secret Manager integration |
+| PDF download | ✅ | Invoice download from billing portal |
+| Gemini OCR integration | ✅ | Metadata extraction |
+
+#### Phase 3.4: Google Ads Vendor（4h）- ✅ COMPLETED
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Google Ads browser automation | ✅ | cloud-run/src/vendors/GoogleAdsVendor.ts |
+| Cookie-based authentication | ✅ | Secret Manager integration |
+| PDF download | ✅ | Invoice download from billing portal |
+| Gemini OCR integration | ✅ | Metadata extraction |
 
 **Use Cases**:
 - Services requiring portal login to download invoices

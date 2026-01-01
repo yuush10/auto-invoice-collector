@@ -19,7 +19,7 @@ This system automatically:
 - **Development**: TypeScript + clasp
 - **Build**: Rollup
 - **Testing**: Jest
-- **OCR/AI**: Gemini API (gemini-1.5-flash)
+- **OCR/AI**: Gemini API (gemini-2.0-flash)
 
 ## Setup
 
@@ -305,17 +305,22 @@ Email body to PDF conversion (Issue #29):
 
 **Supported services**: Canva, Mailchimp, and other email-body-only invoices
 
-### Phase 3 - 🔄 In Progress
+### Phase 3 - ✅ Complete
 
 Vendor portal login & invoice download automation:
 - ✅ Phase 3.1: Download infrastructure (Issue #60)
+- ✅ Phase 3.2: IBJ vendor implementation
+  - Browser automation via Puppeteer
+  - Cookie-based authentication
+  - Gemini OCR metadata extraction
 - ✅ Phase 3.3: Aitemasu vendor implementation (Issue #33)
   - Browser automation via Puppeteer
   - Stripe billing portal navigation
   - Gemini OCR metadata extraction
   - Google Drive upload with proper naming
-- 📋 Phase 3.2: IBJ vendor (TODO)
-- 📋 Phase 3.4: Google Ads vendor (TODO)
+- ✅ Phase 3.4: Google Ads vendor implementation
+  - Browser automation via Puppeteer
+  - Invoice download from billing portal
 
 ### Phase 4 - ✅ Complete
 
