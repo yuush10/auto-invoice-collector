@@ -106,6 +106,24 @@ npm run logs
 npm run deploy
 ```
 
+## Claude Code Skills
+
+This project uses Claude Code skills for Git automation:
+
+| Skill | Purpose |
+|-------|---------|
+| `/worktree` | Create isolated development workspace |
+| `/quality-check` | Run tests, build, lint before commit |
+| `/commit` | Create conventional format commits |
+| `/push` | Push changes to remote |
+| `/pr` | Create PR with structured template |
+| `/ci-check` | Check CI status (future) |
+| `/merge` | Merge PR and cleanup branches/worktrees |
+| `/deploy` | Deploy to Google Apps Script |
+| `/vendor-status` | Check vendor portal credentials |
+
+See [CLAUDE.md](CLAUDE.md) for detailed workflow instructions.
+
 ## Configuration
 
 Before deploying, you need to set up Script Properties:
