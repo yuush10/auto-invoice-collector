@@ -45,10 +45,8 @@ export class WebAppApi {
   private dictHistoryManager: DictionaryHistorySheetManager;
   private promptService: PromptService;
   private journalGenerator: JournalGenerator | null = null;
-  private config: WebAppApiConfig;
 
   constructor(config: WebAppApiConfig) {
-    this.config = config;
     this.draftManager = new DraftSheetManager(config.spreadsheetId);
     this.dictionaryManager = new DictionarySheetManager(config.spreadsheetId);
     this.draftHistoryManager = new DraftHistorySheetManager(config.spreadsheetId);
