@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Language: TypeScript (transpiled to JavaScript)
 - Build: Rollup
 - Testing: Jest
-- OCR/AI: Gemini API (gemini-1.5-flash)
+- OCR/AI: Gemini API (gemini-2.0-flash)
 - Development: clasp CLI
 
 **Current Status:** Phase 4.3 Complete (Journal Entry Review Web App)
@@ -388,7 +388,19 @@ auto-invoice-collector/
 │   │   │   └── FileUploader.ts            # File upload to Drive
 │   │   │
 │   │   ├── ocr/
-│   │   │   └── GeminiOcrService.ts        # Gemini API OCR integration
+│   │   │   ├── GeminiOcrService.ts        # Gemini API OCR integration
+│   │   │   └── JournalExtractionPrompt.ts # Invoice extraction prompts
+│   │   │
+│   │   ├── cloudrun/
+│   │   │   └── CloudRunClient.ts          # Cloud Run service client
+│   │   │
+│   │   ├── url/
+│   │   │   └── UrlExtractor.ts            # URL extraction from emails
+│   │   │
+│   │   ├── vendors/                       # Phase 3: Vendor portal automation
+│   │   │   ├── CookieExpirationTracker.ts # Cookie expiration monitoring
+│   │   │   ├── VendorClient.ts            # Vendor API client
+│   │   │   └── VendorInvoiceProcessor.ts  # Vendor invoice processing
 │   │   │
 │   │   ├── naming/
 │   │   │   └── FileNamingService.ts       # File naming logic
@@ -403,9 +415,10 @@ auto-invoice-collector/
 │   │       ├── DraftSheetManager.ts       # Draft CRUD operations
 │   │       ├── DraftHistorySheetManager.ts # Change history tracking
 │   │       ├── DictionarySheetManager.ts  # Learning dictionary
-│   │       ├── JournalExtractor.ts        # Invoice data extraction
-│   │       ├── JournalSuggestionService.ts # Journal entry suggestions
+│   │       ├── DictionaryHistorySheetManager.ts # Dictionary change history
+│   │       ├── DictionaryService.ts       # Dictionary learning logic
 │   │       ├── JournalGenerator.ts        # Orchestration service
+│   │       ├── PromptConfigSheetManager.ts # Prompt configuration storage
 │   │       └── PromptService.ts           # Prompt management
 │   │
 │   ├── webapp/                  # Phase 4.3: Review Web App
@@ -416,11 +429,13 @@ auto-invoice-collector/
 │   │   ├── index.ts             # TypeScript type definitions
 │   │   ├── journal.ts           # Journal entry types
 │   │   ├── history.ts           # History tracking types
-│   │   └── prompt.ts            # Prompt configuration types
+│   │   ├── prompt.ts            # Prompt configuration types
+│   │   └── vendor.ts            # Vendor automation types
 │   │
 │   └── utils/
 │       ├── logger.ts            # Logging utilities
-│       └── dateUtils.ts         # Date manipulation utilities
+│       ├── dateUtils.ts         # Date manipulation utilities
+│       └── docTypeDetector.ts   # Document type detection (請求書/領収書)
 │
 ├── test/                        # Jest tests
 │   ├── dateUtils.test.ts        # Unit tests
@@ -671,15 +686,21 @@ Given limited context windows:
 ```json
 {
   "timeZone": "Asia/Tokyo",
-  "dependencies": {},
-  "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8",
+  "dependencies": {
+    "enabledAdvancedServices": []
+  },
   "oauthScopes": [
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.labels",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/script.external_request"
-  ]
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/cloud-platform"
+  ],
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
 }
 ```
 
