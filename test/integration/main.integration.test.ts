@@ -221,25 +221,25 @@ describe('FileNamingService Integration Tests', () => {
   it('should generate correct file names', () => {
     const namingService = new FileNamingService();
 
-    const fileName = namingService.generate('AWS', '2025-01');
-    expect(fileName).toBe('2025-01-AWS.pdf');
+    const fileName = namingService.generate('AWS', '2025-01', 'invoice');
+    expect(fileName).toBe('2025-01-AWS-請求書.pdf');
   });
 
   it('should normalize service names with special characters', () => {
     const namingService = new FileNamingService();
 
-    const fileName = namingService.generate('Service/Name:Test', '2025-01');
-    expect(fileName).toBe('2025-01-Service_Name_Test.pdf');
+    const fileName = namingService.generate('Service/Name:Test', '2025-01', 'invoice');
+    expect(fileName).toBe('2025-01-Service_Name_Test-請求書.pdf');
   });
 
   it('should limit service name length to 40 characters', () => {
     const namingService = new FileNamingService();
 
     const longName = 'A'.repeat(50);
-    const fileName = namingService.generate(longName, '2025-01');
+    const fileName = namingService.generate(longName, '2025-01', 'invoice');
 
-    // Format: YYYY-MM-{40chars}.pdf = 7 + 1 + 40 + 4 = 52 chars
-    expect(fileName.length).toBe(52);
+    // Format: YYYY-MM-{40chars}-請求書.pdf = 7 + 1 + 40 + 1 + 3 + 4 = 56 chars
+    expect(fileName.length).toBe(56);
   });
 });
 
