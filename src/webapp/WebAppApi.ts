@@ -31,6 +31,48 @@ import {
 import { AppLogger } from '../utils/logger';
 
 /**
+ * List of fields allowed in DraftUpdate for sanitization.
+ * Protected fields (status, reviewedBy, reviewedAt, draftId, version, etc.)
+ * must be managed through dedicated methods to ensure proper audit trail
+ * tracking for 電子帳簿保存法 compliance.
+ */
+const ALLOWED_DRAFT_UPDATE_FIELDS = [
+  'vendorName',
+  'serviceName',
+  'amount',
+  'taxAmount',
+  'issueDate',
+  'dueDate',
+  'eventMonth',
+  'paymentMonth',
+  'selectedEntry',
+  'notes'
+] as const;
+
+/**
+ * Sanitize DraftUpdate object to only include allowed fields.
+ * This prevents injection of protected fields like status, reviewedBy, reviewedAt, etc.
+ * which must be managed through dedicated methods (updateStatus, selectSuggestion, etc.)
+ * to ensure proper audit trail tracking for 電子帳簿保存法 compliance.
+ *
+ * @param input - The raw input object (potentially containing unauthorized fields)
+ * @returns A sanitized DraftUpdate with only allowed fields
+ */
+export function sanitizeDraftUpdate(input: unknown): DraftUpdate {
+  if (typeof input !== 'object' || input === null) {
+    return {};
+  }
+
+  const sanitized: DraftUpdate = {};
+  for (const field of ALLOWED_DRAFT_UPDATE_FIELDS) {
+    if (field in input) {
+      (sanitized as Record<string, unknown>)[field] = (input as Record<string, unknown>)[field];
+    }
+  }
+  return sanitized;
+}
+
+/**
  * Configuration for WebAppApi
  */
 export interface WebAppApiConfig {
@@ -255,7 +297,8 @@ export class WebAppApi {
   updateDraft(draftId: string, updates: DraftUpdate, reason?: string): DraftDetail | null {
     try {
       const user = this.getCurrentUser();
-      const updated = this.draftManager.update(draftId, updates, reason, user);
+      const sanitizedUpdates = sanitizeDraftUpdate(updates);
+      const updated = this.draftManager.update(draftId, sanitizedUpdates, reason, user);
       if (!updated) {
         return null;
       }
