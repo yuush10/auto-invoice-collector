@@ -248,6 +248,34 @@ footer (optional)
 
 Types: feat, fix, docs, style, refactor, test, chore
 
+### 4. Subagent Coordination
+
+When delegating work to subagents (parallel Claude instances):
+
+**Before Delegation:**
+1. Create dedicated worktree: `git worktree add ../auto-invoice-collector-{name} -b {branch}`
+2. Define clear scope and acceptance criteria
+3. Provide worktree path to subagent
+
+**Subagent Responsibilities:**
+- Work only within assigned worktree
+- Follow all project conventions (this file)
+- Run quality checks before completing
+- Document decisions in issue comments
+
+**After Subagent Completes:**
+1. Review changes in worktree
+2. Merge to integration branch if approved
+3. Remove worktree: `git worktree remove ../auto-invoice-collector-{name}`
+
+**Implementation Loop:**
+```
+1. Implementation Agent → writes code
+2. Quality Check → validates (build, test, anti-patterns)
+3. If issues → fix and repeat step 2
+4. All checks pass → proceed to commit
+```
+
 ## Google Apps Script Development
 
 ### Project Structure
@@ -641,6 +669,52 @@ gh issue close 5 --comment "Implemented in PR #12"
 
 # Reopen if needed
 gh issue reopen 5
+```
+
+## Quick Reference
+
+### Worktree Workflow
+
+```bash
+# Create worktree for parallel development
+git worktree add ../auto-invoice-collector-{name} -b feature/{issue}-{description}
+cd ../auto-invoice-collector-{name}
+npm install
+
+# List active worktrees
+git worktree list
+
+# Remove after merge (from main repo)
+git worktree remove ../auto-invoice-collector-{name}
+```
+
+**Naming Convention:**
+- Path: `../auto-invoice-collector-{branch-short-name}`
+- Branch: `{type}/{issue-number}-{description}`
+
+### Quality Check Commands
+
+```bash
+# Run all quality checks
+npx tsc --noEmit && npm test && npm run build
+
+# Individual checks
+npx tsc --noEmit    # TypeScript compilation
+npm test            # Jest tests
+npm run build       # Bundle build
+```
+
+### Deploy Commands
+
+```bash
+# Standard deploy
+npm run build && npm test && clasp push
+
+# Full deploy with version
+npm run deploy
+
+# Open in Apps Script editor
+clasp open
 ```
 
 ## Remember
