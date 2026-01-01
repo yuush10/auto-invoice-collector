@@ -22,6 +22,7 @@ import {
   DraftListItem,
   DraftDetail,
   DraftUpdate,
+  ApproveResult,
   BulkApproveResult,
   PromptConfigCreate,
   PromptConfigUpdate,
@@ -381,9 +382,10 @@ export class WebAppApi {
     selectedEntry: JournalEntry[],
     registerToDict: boolean,
     editReason?: string
-  ): DraftDetail | null {
+  ): ApproveResult | null {
     try {
       const user = this.getCurrentUser();
+      const warnings: string[] = [];
 
       // Update selected entry if provided
       if (selectedEntry && selectedEntry.length > 0) {
@@ -402,11 +404,18 @@ export class WebAppApi {
       }
 
       // Register to dictionary if requested
-      if (registerToDict && this.journalGenerator) {
-        this.journalGenerator.learnFromDraft(draftId, user);
+      if (registerToDict) {
+        if (this.journalGenerator) {
+          this.journalGenerator.learnFromDraft(draftId, user);
+        } else {
+          warnings.push('Dictionary registration was skipped: Gemini API key not configured');
+        }
       }
 
-      return this.toDraftDetail(approved);
+      return {
+        draft: this.toDraftDetail(approved),
+        warnings: warnings.length > 0 ? warnings : undefined
+      };
     } catch (error) {
       AppLogger.error('Error approving draft', error as Error);
       throw error;
