@@ -344,21 +344,120 @@ Claude MUST proactively invoke project skills when context matches their descrip
 |-------|-----------------|---------|
 | `/worktree` | **Before ANY implementation** and **after completing work** (for cleanup) | Use to create workspace AND to remove after merge |
 | `/quality-check` | Before any commit, after implementation | Use instead of manual `npm test` |
+| `/commit` | After `/quality-check` passes, when saving changes | Use instead of manual `git commit` |
+| `/push` | After `/commit`, before `/pr` | Use instead of manual `git push` |
+| `/pr` | After `/push`, when ready for review | Use instead of manual `gh pr create` |
+| `/ci-check` | Before merge (future - use `/quality-check` for now) | Check CI status when available |
+| `/merge` | After PR approval, when ready to merge | Use instead of manual merge + cleanup |
 | `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
 | `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
 
 **Required Behavior:**
 
 1. **Before implementations**: Always invoke `/worktree` skill first to create isolated workspace
-2. **Before commits**: Always invoke `/quality-check` skill
-3. **For deployments**: Always invoke `/deploy` skill
-4. **For vendor auth checks**: Invoke `/vendor-status` when relevant
-5. **After work complete**: Always invoke `/worktree remove` to clean up the worktree
+2. **After implementation**: Invoke `/quality-check` skill
+3. **To save changes**: Invoke `/commit` skill (after quality-check passes)
+4. **To upload changes**: Invoke `/push` skill
+5. **To request review**: Invoke `/pr` skill (Main Claude provides title/body content)
+6. **Before merge**: Invoke `/ci-check` (or `/quality-check` if no CI)
+7. **After approval**: Invoke `/merge` skill for merge + cleanup
+8. **For deployments**: Invoke `/deploy` skill
+9. **For vendor auth checks**: Invoke `/vendor-status` when relevant
 
 **Why This Matters:**
 - Skills contain project-specific logic and checks
 - Skills ensure consistent workflows across sessions
 - Skills may include steps that manual commands miss
+
+### 7. Git Automation Best Practices
+
+#### 7.1 Automation Delegation Matrix
+
+Operations are delegated based on reversibility, context requirements, and judgment needs:
+
+| Operation | Automation Level | Reason | Skill |
+|-----------|------------------|--------|-------|
+| commit | Full | Diff is clear, reversible, atomic | `/commit` |
+| push | Full | No context needed | `/push` |
+| PR creation (exec) | Partial | Execution routine, content by Main Claude | `/pr` |
+| PR Title/Body | Review | Requires session context | Main Claude |
+| CI check | Full (future) | Machine judgment (no CI currently) | `/ci-check` |
+| merge PR | Partial | Timing judgment may be required | `/merge` |
+| branch deletion | Full | Post-merge, automatic | `/merge` |
+| worktree deletion | Full | Post-merge ceremony | `/merge` |
+
+#### 7.2 Prohibited Git Commands
+
+Claude SHOULD NOT execute these commands (warning, not blocked):
+
+```bash
+# Prefer worktrees over checkout
+git checkout <branch>       # Use worktrees instead
+git checkout -b <branch>    # Use worktrees instead
+
+# Never force push
+git push --force            # Prohibited
+git push -f                 # Prohibited
+
+# Never modify history on shared branches
+git rebase -i               # Prohibited (interactive)
+git reset --hard            # Prohibited on shared branches
+
+# Never bypass hooks
+git commit --no-verify      # Prohibited
+```
+
+**Why prefer worktrees over checkout:**
+- Worktrees provide isolation without context switching
+- Prevents accidental commits to wrong branch
+- Enables parallel work naturally
+- Clearer ownership of changes
+
+#### 7.3 Recommended Git Flow
+
+```
+[Subagent/Claude]
+  /worktree create → implement → /quality-check → /commit → /push
+        ↓
+[Main Claude]
+  Review PR body from /pr (add WHY, session context, review focus)
+        ↓
+[Main Claude]
+  /pr create → User approval → /merge → auto-cleanup
+```
+
+#### 7.4 PR Body Requirements
+
+When creating a PR, Main Claude MUST provide:
+
+```markdown
+## Summary
+<!-- REQUIRED: Explain WHY this change is needed, not just WHAT it does -->
+<!-- Include session context that led to this change -->
+
+## Changes
+<!-- Auto-generated from diff, human may enhance -->
+
+## Review Focus
+<!-- Key areas reviewers should check -->
+
+## Test Plan
+<!-- How was this tested? -->
+
+Closes #<issue-number>
+```
+
+#### 7.5 Key Principle: 1 Worktree = 1 Branch = 1 PR
+
+Each implementation should follow:
+- ONE worktree for isolation
+- ONE branch for the feature
+- ONE PR for review
+
+This ensures:
+- Clear ownership
+- Easy cleanup
+- Traceable history
 
 ## Google Apps Script Development
 

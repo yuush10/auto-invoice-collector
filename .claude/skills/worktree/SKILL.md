@@ -8,6 +8,15 @@ allowed-tools: Bash, Read
 
 Manages git worktrees for parallel feature development on different branches.
 
+## Key Principle: 1 Worktree = 1 Branch = 1 PR
+
+Each worktree maps to exactly:
+- ONE feature branch
+- ONE pull request
+- ONE GitHub issue
+
+This ensures clear ownership, easy cleanup, and traceable history.
+
 ## When to Use Worktrees
 
 - Working on multiple features simultaneously
@@ -75,12 +84,21 @@ git worktree prune
 
 ## Directory Naming Convention
 
-| Purpose | Directory Suffix | Branch Pattern |
-|---------|-----------------|----------------|
-| Feature | `-feature-{issue}` | `feature/{issue}-{desc}` |
+Include feature/responsibility in worktree name for clarity:
+
+| Purpose | Directory | Branch Pattern |
+|---------|-----------|----------------|
+| Feature | `-wt-{feature}` | `feature/{issue}-{desc}` |
 | Phase | `-phase{N}` | `develop/phase{N}` |
-| Hotfix | `-hotfix` | `fix/{issue}-{desc}` |
-| Module | `-{module}` | `feature/{module}-{desc}` |
+| Hotfix | `-wt-fix-{issue}` | `fix/{issue}-{desc}` |
+| Module | `-wt-{module}` | `feature/{module}-{desc}` |
+
+**Examples:**
+- `-wt-auth` for authentication feature
+- `-wt-ocr-fix` for OCR bug fix
+- `-wt-journal-ui` for journal UI work
+
+Pattern: `../auto-invoice-collector-wt-{feature-short-name}`
 
 ## Important Notes
 
@@ -106,3 +124,17 @@ When delegating to subagents:
    ```bash
    git worktree remove ../auto-invoice-collector-subagent-task
    ```
+
+## Post-Merge Cleanup (MANDATORY)
+
+After PR merge, ALWAYS remove the worktree:
+
+```bash
+# From main repo directory
+git worktree remove ../auto-invoice-collector-wt-{name}
+
+# Verify removal
+git worktree list
+```
+
+**NEVER leave stale worktrees.** The `/merge` skill handles this automatically, but if merging manually, cleanup is required.
