@@ -3,8 +3,7 @@
  */
 
 import { DraftStatus, JournalEntry, JournalEntrySuggestion } from '../types/journal';
-import { DraftHistoryEntry, DictionaryHistoryEntry } from '../types/history';
-import { PromptConfig, PromptType } from '../types/prompt';
+import { PromptType } from '../types/prompt';
 import { DocumentType } from '../types';
 
 /**
