@@ -212,6 +212,35 @@ function testAuthFailureNotification_Aitemasu() {
 function updateCookie_Aitemasu_30days() {
   return globalThis.updateCookie_Aitemasu_30days();
 }
+
+// Pending vendor queue functions (Phase 3.6)
+function api_getPendingVendors() {
+  return globalThis.api_getPendingVendors();
+}
+
+function api_getAllPendingVendorRecords() {
+  return globalThis.api_getAllPendingVendorRecords();
+}
+
+function api_getPendingVendorById(id) {
+  return globalThis.api_getPendingVendorById(id);
+}
+
+function api_startVendorProcessing(id) {
+  return globalThis.api_startVendorProcessing(id);
+}
+
+function api_completePendingVendor(id) {
+  return globalThis.api_completePendingVendor(id);
+}
+
+function api_failPendingVendor(id, errorMessage) {
+  return globalThis.api_failPendingVendor(id, errorMessage);
+}
+
+function queueVendorForManualProcessing(vendorKey) {
+  return globalThis.queueVendorForManualProcessing(vendorKey);
+}
 `
   },
   plugins: [
