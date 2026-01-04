@@ -103,6 +103,12 @@ export interface VendorSchedule {
   hour: number;
   /** Whether this vendor is enabled for automated processing */
   enabled: boolean;
+  /**
+   * Whether this vendor requires manual trigger (e.g., CAPTCHA solving).
+   * If true, the vendor will be queued as "pending" on scheduled date
+   * instead of auto-executing. User must manually initiate via Web App.
+   */
+  requiresManualTrigger?: boolean;
 }
 
 /**
@@ -112,7 +118,7 @@ export interface VendorSchedule {
 export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
   'aitemasu': { day: 1, hour: 8, enabled: true },
   'google-ads': { day: 4, hour: 8, enabled: true },
-  'ibj': { day: 11, hour: 8, enabled: true },
+  'ibj': { day: 11, hour: 8, enabled: true, requiresManualTrigger: true },
 };
 
 /**
