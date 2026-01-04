@@ -1,7 +1,7 @@
 # Use official Node.js 18 image
 FROM node:18-slim
 
-# Install Chrome dependencies for Puppeteer
+# Install Chrome dependencies for Puppeteer and VNC components for interactive sessions
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-ipafont-gothic \
@@ -10,8 +10,19 @@ RUN apt-get update && apt-get install -y \
     fonts-kacst \
     fonts-freefont-ttf \
     libxss1 \
+    # VNC dependencies for interactive sessions (Phase 3.6)
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    # Required for VNC
+    x11-utils \
+    dbus-x11 \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+
+# Create directory for VNC data
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # Set working directory
 WORKDIR /app

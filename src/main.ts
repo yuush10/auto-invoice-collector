@@ -6,6 +6,7 @@
  */
 
 import { Config, SERVICES, VENDOR_SCHEDULE, VENDOR_CONFIGS } from './config';
+import { getPendingVendorQueueManager } from './modules/vendors/PendingVendorQueueManager';
 import { GmailSearcher } from './modules/gmail/GmailSearcher';
 import { AttachmentExtractor } from './modules/gmail/AttachmentExtractor';
 import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
@@ -935,6 +936,72 @@ function api_resetToDefaultPrompt(promptType: string): string {
 }
 
 // ============================================
+// Pending Vendor APIs (Phase 3.6)
+// ============================================
+
+function api_getPendingVendors(): string {
+  try {
+    const result = getWebAppApi().getPendingVendors();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getAllPendingVendorRecords(): string {
+  try {
+    const result = getWebAppApi().getAllPendingVendorRecords();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPendingVendorById(id: string): string {
+  try {
+    const result = getWebAppApi().getPendingVendorById(id);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_startVendorProcessing(id: string): string {
+  try {
+    const result = getWebAppApi().startVendorProcessing(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_completePendingVendor(id: string): string {
+  try {
+    const result = getWebAppApi().completePendingVendor(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_failPendingVendor(id: string, errorMessage: string): string {
+  try {
+    const result = getWebAppApi().failPendingVendor(id, errorMessage);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export pending vendor API functions
+(globalThis as any).api_getPendingVendors = api_getPendingVendors;
+(globalThis as any).api_getAllPendingVendorRecords = api_getAllPendingVendorRecords;
+(globalThis as any).api_getPendingVendorById = api_getPendingVendorById;
+(globalThis as any).api_startVendorProcessing = api_startVendorProcessing;
+(globalThis as any).api_completePendingVendor = api_completePendingVendor;
+(globalThis as any).api_failPendingVendor = api_failPendingVendor;
+
+// ============================================
 // Test Data Generation (Development Only)
 // ============================================
 
@@ -1471,6 +1538,75 @@ function downloadAitemasuInvoices(): void {
  * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
  * any unhandled promise rejections are logged and notified.
  */
+
+/**
+ * Queue a vendor for manual processing
+ * Called when a vendor has requiresManualTrigger=true
+ * Stores pending task in sheet and sends notification email
+ */
+function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date): void {
+  const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+  const vendorName = vendorConfig?.vendorName || vendorKey;
+
+  AppLogger.info(`[Vendor] Queuing ${vendorKey} for manual processing`);
+
+  // Store in PendingVendorQueueManager sheet
+  const queueManager = getPendingVendorQueueManager();
+  const record = queueManager.addPendingVendor(vendorKey, scheduledDate);
+  AppLogger.info(`[Vendor] Created pending record: ${record.id}`);
+
+  // Send notification email about pending vendor
+  try {
+    const dateStr = scheduledDate.toLocaleDateString('ja-JP', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Tokyo'
+    });
+    const timeStr = scheduledDate.toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Tokyo'
+    });
+
+    // TODO: Phase 4 - Replace with VNC link
+    const webAppUrl = ScriptApp.getService().getUrl();
+
+    const subject = `[Auto Invoice Collector] ${vendorName} 請求書処理待機中`;
+    const body = `${vendorName}の請求書処理が待機中です。
+
+このベンダーはCAPTCHA認証が必要なため、自動処理ができません。
+手動で処理を開始してください。
+
+■ 詳細
+- ベンダー: ${vendorName}
+- 予定日時: ${dateStr} ${timeStr}
+- ステータス: 待機中
+
+■ 処理方法
+以下のリンクから処理を開始してください:
+${webAppUrl}
+
+処理を開始すると、ブラウザが表示されCAPTCHA認証を行えます。
+認証後は自動的にOTP処理と請求書ダウンロードが行われます。
+
+---
+Auto Invoice Collector`;
+
+    MailApp.sendEmail({
+      to: Config.getAdminEmail(),
+      subject,
+      body
+    });
+
+    AppLogger.info(`[Vendor] Sent pending notification for ${vendorKey}`);
+  } catch (error) {
+    AppLogger.error(`[Vendor] Failed to send pending notification for ${vendorKey}`, error as Error);
+    throw error;
+  }
+}
+(globalThis as any).queueVendorForManualProcessing = queueVendorForManualProcessing;
+
 function processScheduledVendors(): void {
   processScheduledVendorsAsync().catch(error => {
     AppLogger.error('Unhandled error in scheduled vendor processing', error as Error);
@@ -1495,13 +1631,41 @@ async function processScheduledVendorsAsync(): Promise<void> {
   AppLogger.info(`[Vendor] Checking scheduled vendors for day ${today} at ${currentHour}:00`);
 
   // Find vendors scheduled for today that are enabled
-  const vendorsToProcess = Object.entries(VENDOR_SCHEDULE)
-    .filter(([_, schedule]) => schedule.day === today && schedule.enabled)
+  const scheduledVendors = Object.entries(VENDOR_SCHEDULE)
+    .filter(([_, schedule]) => schedule.day === today && schedule.enabled);
+
+  // Separate auto-process and manual-trigger vendors
+  const vendorsToProcess = scheduledVendors
+    .filter(([_, schedule]) => !schedule.requiresManualTrigger)
     .map(([vendorKey, _]) => vendorKey);
 
-  if (vendorsToProcess.length === 0) {
+  const manualTriggerVendors = scheduledVendors
+    .filter(([_, schedule]) => schedule.requiresManualTrigger)
+    .map(([vendorKey, _]) => vendorKey);
+
+  if (vendorsToProcess.length === 0 && manualTriggerVendors.length === 0) {
     AppLogger.info(`[Vendor] No vendors scheduled for day ${today}`);
     Logger.log(`No vendors scheduled for day ${today}`);
+    return;
+  }
+
+  // Queue manual-trigger vendors for later processing
+  if (manualTriggerVendors.length > 0) {
+    AppLogger.info(`[Vendor] Manual-trigger vendors scheduled for day ${today}: ${manualTriggerVendors.join(', ')}`);
+    for (const vendorKey of manualTriggerVendors) {
+      try {
+        // Queue vendor for manual processing (implemented in Phase 2)
+        queueVendorForManualProcessing(vendorKey, now);
+        AppLogger.info(`[Vendor] Queued ${vendorKey} for manual processing`);
+      } catch (error) {
+        AppLogger.error(`[Vendor] Failed to queue ${vendorKey} for manual processing`, error as Error);
+      }
+    }
+  }
+
+  if (vendorsToProcess.length === 0) {
+    AppLogger.info(`[Vendor] No auto-process vendors scheduled for day ${today}`);
+    Logger.log(`No auto-process vendors scheduled for day ${today} (manual-trigger vendors queued)`);
     return;
   }
 
