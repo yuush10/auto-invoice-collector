@@ -30,9 +30,9 @@ import os
 import sys
 from typing import Any
 
-# browser-use imports
-from browser_use import Agent, Browser, BrowserConfig
-from langchain_anthropic import ChatAnthropic
+# browser-use imports (v0.11.2+)
+from browser_use import Agent, Browser
+from browser_use.llm.anthropic.chat import ChatAnthropic
 
 
 class AILoginResult:
@@ -61,7 +61,7 @@ class AILoginResult:
         return result
 
 
-def get_ibj_login_task(username: str, login_url: str) -> str:
+def get_ibj_login_task(username: str, password: str, login_url: str) -> str:
     """Generate the task prompt for IBJ login."""
     return f"""
 Navigate to {login_url} and perform login with the following steps.
@@ -81,7 +81,7 @@ Steps:
 3. Find the password input field (look for input with id "login_password" or
    type="password")
    - Click on it first
-   - Then type the password (provided via environment variable)
+   - Then type the password: {password}
    - Type naturally with small pauses
 
 4. Look for a reCAPTCHA checkbox (iframe containing "recaptcha" or checkbox
@@ -142,46 +142,29 @@ async def perform_login(
         )
 
     try:
-        # Initialize Claude LLM
+        # Initialize Claude LLM (browser-use's built-in Anthropic chat)
         llm = ChatAnthropic(
             model="claude-sonnet-4-20250514",
-            temperature=0,
-            max_tokens=4096,
             api_key=api_key,
         )
 
-        # Configure browser
-        browser_config = BrowserConfig(
+        # Create browser instance with config
+        browser = Browser(
             headless=headless,
-            # Disable some automation detection
-            extra_chromium_args=[
+            args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
             ],
         )
 
-        # Create browser instance
-        browser = Browser(config=browser_config)
-
-        # Set password in environment for agent to use securely
-        # (Agent instructions reference it without exposing in task text)
-        os.environ["_AI_LOGIN_PASSWORD"] = password
-
-        # Get the login task
+        # Get the login task (password is included directly in the task)
         if vendor == "ibj":
-            task = get_ibj_login_task(username, login_url)
+            task = get_ibj_login_task(username, password, login_url)
         else:
             return AILoginResult(
                 success=False, error=f"Unsupported vendor: {vendor}"
             )
-
-        # Modify task to include password instruction
-        task += """
-
-IMPORTANT: For the password field, use the value from the _AI_LOGIN_PASSWORD
-environment variable. Type it character by character with natural timing.
-"""
 
         # Create agent
         agent = Agent(
@@ -193,40 +176,40 @@ environment variable. Type it character by character with natural timing.
         # Run the agent
         history = await agent.run(max_steps=30)
 
-        # Get browser context to extract cookies
-        context = await browser.get_context()
-        if context:
-            cookies_raw = await context.cookies()
+        # Extract cookies from browser
+        try:
+            cookies_raw = await browser.cookies()
             cookies = [
                 {
-                    "name": c.get("name", ""),
-                    "value": c.get("value", ""),
-                    "domain": c.get("domain", ""),
-                    "path": c.get("path", "/"),
-                    "expires": c.get("expires", -1),
-                    "httpOnly": c.get("httpOnly", False),
-                    "secure": c.get("secure", False),
-                    "sameSite": c.get("sameSite", "Lax"),
+                    "name": c.name if hasattr(c, 'name') else c.get("name", ""),
+                    "value": c.value if hasattr(c, 'value') else c.get("value", ""),
+                    "domain": c.domain if hasattr(c, 'domain') else c.get("domain", ""),
+                    "path": c.path if hasattr(c, 'path') else c.get("path", "/"),
+                    "expires": c.expires if hasattr(c, 'expires') else c.get("expires", -1),
+                    "httpOnly": c.httpOnly if hasattr(c, 'httpOnly') else c.get("httpOnly", False),
+                    "secure": c.secure if hasattr(c, 'secure') else c.get("secure", False),
+                    "sameSite": c.sameSite if hasattr(c, 'sameSite') else c.get("sameSite", "Lax"),
                 }
                 for c in cookies_raw
             ]
-
-            # Take final screenshot
-            page = await context.new_page() if not context.pages else context.pages[0]
-            try:
-                screenshot_bytes = await page.screenshot()
-                screenshots.append(base64.b64encode(screenshot_bytes).decode("utf-8"))
-            except Exception:
-                pass  # Screenshot is optional
-
-        else:
+        except Exception:
             cookies = []
+
+        # Take final screenshot
+        try:
+            screenshot_bytes = await browser.take_screenshot()
+            if screenshot_bytes:
+                screenshots.append(base64.b64encode(screenshot_bytes).decode("utf-8"))
+        except Exception:
+            pass  # Screenshot is optional
 
         # Check if login was successful based on agent history
         # Look for indicators in the final state
         final_url = ""
-        if context and context.pages:
-            final_url = context.pages[0].url
+        try:
+            final_url = await browser.get_current_page_url()
+        except Exception:
+            pass
 
         login_success = False
         if final_url and "/logins" not in final_url:
@@ -237,11 +220,8 @@ environment variable. Type it character by character with natural timing.
         ):
             login_success = True
 
-        # Close browser
-        await browser.close()
-
-        # Clean up password from environment
-        os.environ.pop("_AI_LOGIN_PASSWORD", None)
+        # Stop browser
+        await browser.stop()
 
         if login_success:
             return AILoginResult(
@@ -255,8 +235,6 @@ environment variable. Type it character by character with natural timing.
             )
 
     except Exception as e:
-        # Clean up password from environment on error
-        os.environ.pop("_AI_LOGIN_PASSWORD", None)
         return AILoginResult(success=False, error=str(e), screenshots=screenshots)
 
 
