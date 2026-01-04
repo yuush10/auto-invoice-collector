@@ -28,6 +28,7 @@ import { Page } from 'puppeteer';
 import { BaseVendor } from './BaseVendor';
 import { VendorCredentials, DownloadOptions, DownloadedFile } from './types';
 import { GmailOtpService, IBJ_OTP_CONFIG } from '../services/GmailOtpService';
+import { getAILoginService, AILoginResult } from '../services/AILoginService';
 
 /**
  * Extended credentials for IBJ (includes OTP email address)
@@ -102,6 +103,36 @@ export class IBJVendor extends BaseVendor {
     const ibjCreds = credentials as IBJCredentials;
     const otpEmail = ibjCreds.otpEmail || this.defaultOtpEmail;
 
+    // Initialize Gmail OTP service
+    this.gmailOtpService = new GmailOtpService(otpEmail);
+
+    // Try AI login first if enabled
+    const aiLoginService = getAILoginService();
+    if (aiLoginService.isEnabled()) {
+      this.log('AI Login is enabled - attempting AI-driven login');
+      this.log(`OTP will be sent to: ${otpEmail}`);
+
+      const aiResult = await this.attemptAILogin(page, ibjCreds);
+
+      if (aiResult.success) {
+        this.log('AI login successful!');
+        // AI login completed initial authentication, now handle OTP flow
+        await this.handleOtpFlowAfterAILogin(page);
+        return;
+      }
+
+      // AI login failed
+      this.log(`AI login failed: ${aiResult.error}`, 'warn');
+
+      if (!aiLoginService.isFallbackEnabled()) {
+        throw new Error(`AI login failed and fallback is disabled: ${aiResult.error}`);
+      }
+
+      this.log('Falling back to manual login mode...');
+      this.log('');
+    }
+
+    // Manual login mode (default or fallback)
     this.log('Starting IBJ login (Hybrid Manual/Automated mode)');
     this.log(`OTP will be sent to: ${otpEmail}`);
     this.log('');
@@ -113,9 +144,6 @@ export class IBJVendor extends BaseVendor {
     this.log('Automation will continue after you complete login...');
     this.log('='.repeat(60));
     this.log('');
-
-    // Initialize Gmail OTP service
-    this.gmailOtpService = new GmailOtpService(otpEmail);
 
     // Step 1: Check current page (download route already navigated here)
     this.log('Step 1: On login page');
@@ -657,5 +685,178 @@ export class IBJVendor extends BaseVendor {
 
     this.log(`Download complete: ${files.length} file(s)`);
     return files;
+  }
+
+  /**
+   * Attempt AI-driven login using browser-use
+   *
+   * The AI agent launches its own browser, performs login with human-like
+   * interactions, and returns cookies on success.
+   *
+   * Note: This runs in a separate browser instance, so we need to transfer
+   * cookies to the main Puppeteer page after success.
+   */
+  private async attemptAILogin(page: Page, credentials: IBJCredentials): Promise<AILoginResult> {
+    const aiLoginService = getAILoginService();
+
+    this.log('Launching AI login agent...');
+    await this.takeScreenshot(page, 'before-ai-login');
+
+    const result = await aiLoginService.attemptLogin({
+      vendorKey: this.vendorKey,
+      loginUrl: this.loginUrl,
+      credentials: {
+        username: credentials.username,
+        password: credentials.password,
+      },
+      headless: true,
+    });
+
+    if (result.success && result.cookies && result.cookies.length > 0) {
+      this.log(`AI login returned ${result.cookies.length} cookies`);
+
+      // Transfer cookies to the main Puppeteer page
+      try {
+        // Convert AI cookies to Puppeteer cookie format
+        const puppeteerCookies = result.cookies.map(c => ({
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path || '/',
+          httpOnly: c.httpOnly || false,
+          secure: c.secure || false,
+          sameSite: (c.sameSite as 'Lax' | 'Strict' | 'None') || 'Lax',
+          ...(c.expires && c.expires > 0 ? { expires: c.expires } : {}),
+        }));
+
+        await page.setCookie(...puppeteerCookies);
+        this.log('Cookies transferred to main browser');
+
+        // Reload the page to apply cookies
+        await page.reload({ waitUntil: 'networkidle0' });
+        await this.wait(2000);
+
+        // Verify we're past the login page
+        const currentUrl = page.url();
+        if (currentUrl.includes('/logins')) {
+          this.log('Still on login page after cookie transfer - AI login may have failed');
+          return {
+            success: false,
+            error: 'Cookie transfer did not result in logged-in state',
+          };
+        }
+
+        await this.takeScreenshot(page, 'after-ai-login-cookies');
+        return result;
+      } catch (cookieError) {
+        this.log(`Failed to transfer cookies: ${(cookieError as Error).message}`, 'error');
+        return {
+          success: false,
+          error: `Cookie transfer failed: ${(cookieError as Error).message}`,
+        };
+      }
+    }
+
+    // Log any screenshots from AI login for debugging
+    if (result.screenshots && result.screenshots.length > 0) {
+      this.log(`AI login captured ${result.screenshots.length} debug screenshots`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Handle OTP flow after AI login succeeded
+   *
+   * After AI login completes the initial authentication (credentials + reCAPTCHA),
+   * we still need to handle the OTP verification step.
+   */
+  private async handleOtpFlowAfterAILogin(page: Page): Promise<void> {
+    this.log('Handling OTP flow after AI login');
+
+    // Wait for page to settle
+    await this.wait(2000);
+    await this.takeScreenshot(page, 'after-ai-login-state');
+
+    const currentUrl = page.url();
+    this.log(`Current URL: ${currentUrl}`);
+
+    // Check if we need to request OTP
+    const otpSendButtonExists = await this.elementExists(page, SELECTORS.otpSendButton);
+    if (otpSendButtonExists) {
+      this.log('OTP request page detected - clicking send button');
+      await page.click(SELECTORS.otpSendButton);
+      await this.wait(3000);
+      await this.takeScreenshot(page, 'otp-requested-after-ai');
+    }
+
+    // Check if we're on OTP input page
+    const otpInputExists = await this.elementExists(page, SELECTORS.otpInput);
+    if (otpInputExists) {
+      this.log('OTP input page detected - fetching OTP code');
+
+      let otpCode: string | null = null;
+
+      // Try Gmail API first
+      try {
+        this.log('Attempting to fetch OTP from Gmail API...');
+        const otpResult = await this.gmailOtpService!.waitForOtp(
+          IBJ_OTP_CONFIG,
+          90000,
+          5000
+        );
+        otpCode = otpResult.code;
+        this.log(`OTP received via Gmail API: ${otpCode}`);
+      } catch (gmailError) {
+        this.log(`Gmail API not available: ${(gmailError as Error).message}`, 'warn');
+        this.log('');
+        this.log('='.repeat(60));
+        this.log('MANUAL OTP ENTRY REQUIRED:');
+        this.log('AI login succeeded, but Gmail API is not available for OTP.');
+        this.log('Please enter the OTP code manually and click submit.');
+        this.log('='.repeat(60));
+        this.log('');
+
+        // Wait for manual OTP entry
+        const manualResult = await this.waitForManualOtpEntry(page, 120000);
+        if (manualResult.alreadySubmitted) {
+          this.log('User already submitted OTP');
+          await this.wait(3000);
+          return;
+        }
+        otpCode = manualResult.code;
+      }
+
+      if (otpCode) {
+        // Enter OTP code
+        this.log(`Entering OTP code: ${otpCode}`);
+        await this.typeWithDelay(page, SELECTORS.otpInput, otpCode, 100);
+        await this.takeScreenshot(page, 'otp-entered-after-ai');
+
+        // Submit OTP
+        this.log('Submitting OTP');
+        const submitButtons = await page.$$('input[type="submit"]');
+        if (submitButtons.length > 0) {
+          await submitButtons[0].click();
+        }
+        await this.wait(5000);
+        await this.takeScreenshot(page, 'after-otp-submit-ai');
+      }
+    }
+
+    // Check if we're already fully logged in
+    const myPageExists = await this.elementExists(page, SELECTORS.myPageMenu);
+    if (myPageExists) {
+      this.log('Already fully logged in - no OTP needed');
+      return;
+    }
+
+    // Verify login success
+    const loggedIn = await this.isLoggedIn(page);
+    if (!loggedIn) {
+      throw new Error('Login failed after AI login and OTP verification');
+    }
+
+    this.log('AI login and OTP flow completed successfully');
   }
 }

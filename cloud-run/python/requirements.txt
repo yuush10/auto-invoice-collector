@@ -1,0 +1,11 @@
+# AI Login Automation Dependencies
+# Used by ai_login.py for browser-use based login automation
+
+# Browser automation with AI
+browser-use>=0.1.40
+
+# Anthropic Claude SDK for LLM
+langchain-anthropic>=0.3.0
+
+# Playwright for browser control (browser-use dependency)
+playwright>=1.40.0
