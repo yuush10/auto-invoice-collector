@@ -1,9 +1,18 @@
 node_modules/
 dist/
 *.log
-.env
 .DS_Store
 coverage/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
 
 # Manual test files with credentials
 test-google-ads.ts

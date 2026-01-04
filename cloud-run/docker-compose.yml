@@ -1,0 +1,46 @@
+# Docker Compose for local development
+# Usage: docker compose up --build
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount source for hot reload (requires rebuild for TypeScript changes)
+      - ./src:/app/src
+      - ./python:/app/python
+      - ./test:/app/test
+      # Exclude node_modules and dist from volume mounts
+      - /app/node_modules
+      - /app/dist
+    environment:
+      # AI Login configuration
+      - ENABLE_AI_LOGIN=${ENABLE_AI_LOGIN:-false}
+      - AI_LOGIN_TIMEOUT=${AI_LOGIN_TIMEOUT:-60000}
+      - AI_LOGIN_FALLBACK=${AI_LOGIN_FALLBACK:-true}
+      # Credentials (from .env.local)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - IBJ_USERNAME=${IBJ_USERNAME}
+      - IBJ_PASSWORD=${IBJ_PASSWORD}
+      # Development settings
+      - NODE_ENV=development
+    env_file:
+      - path: .env.local
+        required: false
+    # Keep container running for exec commands
+    stdin_open: true
+    tty: true
+
+  # Optional: Run tests in isolated container
+  test:
+    build: .
+    volumes:
+      - ./src:/app/src
+      - ./python:/app/python
+      - ./test:/app/test
+      - /app/node_modules
+      - /app/dist
+    command: npm test
+    profiles:
+      - test

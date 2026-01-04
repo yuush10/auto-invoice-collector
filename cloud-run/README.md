@@ -78,16 +78,73 @@ Health check endpoint (no authentication required).
 
 ## Local Development
 
-### Prerequisites
+### Option 1: Docker Compose (Recommended)
+
+Docker Compose provides a reproducible environment identical to Cloud Run production.
+
+#### Prerequisites
+
+- Docker Desktop
+- Docker Compose v2
+
+#### Setup
+
+```bash
+# Copy environment template
+cp .env.example .env.local
+
+# Edit .env.local with your credentials
+# (ANTHROPIC_API_KEY, IBJ_USERNAME, IBJ_PASSWORD, etc.)
+
+# Start the development environment
+docker compose up --build
+
+# In another terminal, run tests
+docker compose exec app npm test
+
+# Test AI login (if enabled)
+docker compose exec app python3 python/ai_login.py \
+  --vendor ibj \
+  --login-url https://www.ibjapan.com/div/logins
+```
+
+#### Available Commands
+
+```bash
+# Start in background
+docker compose up -d --build
+
+# View logs
+docker compose logs -f app
+
+# Stop and remove containers
+docker compose down
+
+# Rebuild after Dockerfile changes
+docker compose build --no-cache
+```
+
+### Option 2: Native Node.js
+
+For quick iteration without Docker.
+
+#### Prerequisites
 
 - Node.js 18+
 - npm
+- Python 3.11+ (for AI login feature)
 
-### Setup
+#### Setup
 
 ```bash
 # Install dependencies
 npm install
+
+# (Optional) Install Python dependencies for AI login
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r python/requirements.txt
+python -m playwright install chromium
 
 # Run in development mode
 npm run dev
