@@ -10,6 +10,11 @@ import { DictionaryHistorySheetManager } from '../modules/journal/DictionaryHist
 import { PromptService } from '../modules/journal/PromptService';
 import { JournalGenerator } from '../modules/journal/JournalGenerator';
 import {
+  PendingVendorQueueManager,
+  getPendingVendorQueueManager,
+  PendingVendorRecord
+} from '../modules/vendors/PendingVendorQueueManager';
+import {
   DraftEntry,
   DraftStatus,
   JournalEntry,
@@ -88,6 +93,7 @@ export class WebAppApi {
   private dictHistoryManager: DictionaryHistorySheetManager;
   private promptService: PromptService;
   private journalGenerator: JournalGenerator | null = null;
+  private _pendingQueueManager: PendingVendorQueueManager | null = null;
 
   constructor(config: WebAppApiConfig) {
     this.draftManager = new DraftSheetManager(config.spreadsheetId);
@@ -95,6 +101,7 @@ export class WebAppApi {
     this.draftHistoryManager = new DraftHistorySheetManager(config.spreadsheetId);
     this.dictHistoryManager = new DictionaryHistorySheetManager(config.spreadsheetId);
     this.promptService = new PromptService({ spreadsheetId: config.spreadsheetId });
+    // Note: pendingQueueManager is lazy-loaded to avoid issues in test environments
 
     if (config.geminiApiKey) {
       this.journalGenerator = new JournalGenerator({
@@ -102,6 +109,16 @@ export class WebAppApi {
         spreadsheetId: config.spreadsheetId
       });
     }
+  }
+
+  /**
+   * Get the pending queue manager (lazy-loaded)
+   */
+  private get pendingQueueManager(): PendingVendorQueueManager {
+    if (!this._pendingQueueManager) {
+      this._pendingQueueManager = getPendingVendorQueueManager();
+    }
+    return this._pendingQueueManager;
   }
 
   // ============================================
@@ -760,5 +777,135 @@ export class WebAppApi {
     } catch {
       return {};
     }
+  }
+
+  // ============================================
+  // Pending Vendor APIs
+  // ============================================
+
+  /**
+   * Response type for pending vendor list
+   */
+  getPendingVendors(): PendingVendorRecord[] {
+    try {
+      return this.pendingQueueManager.getPendingVendors();
+    } catch (error) {
+      AppLogger.error('Error getting pending vendors', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all pending vendor records (including completed/failed)
+   */
+  getAllPendingVendorRecords(): PendingVendorRecord[] {
+    try {
+      return this.pendingQueueManager.getAllRecords();
+    } catch (error) {
+      AppLogger.error('Error getting all pending vendor records', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific pending vendor record by ID
+   */
+  getPendingVendorById(id: string): PendingVendorRecord | null {
+    try {
+      return this.pendingQueueManager.getRecordById(id);
+    } catch (error) {
+      AppLogger.error('Error getting pending vendor by ID', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start processing a pending vendor
+   * Returns the session URL for VNC access
+   */
+  startVendorProcessing(id: string): { success: boolean; sessionUrl?: string; error?: string } {
+    try {
+      const record = this.pendingQueueManager.getRecordById(id);
+      if (!record) {
+        return { success: false, error: 'Pending vendor record not found' };
+      }
+
+      if (record.status !== 'pending') {
+        return { success: false, error: `Cannot start processing: status is ${record.status}` };
+      }
+
+      // TODO: Phase 4 - Generate VNC session URL from Cloud Run
+      // For now, return a placeholder URL
+      const sessionUrl = this.generateInteractiveSessionUrl(record);
+
+      // Update status to processing
+      this.pendingQueueManager.startProcessing(id, sessionUrl);
+
+      AppLogger.info(`[WebAppApi] Started vendor processing: ${id}, session: ${sessionUrl}`);
+
+      return { success: true, sessionUrl };
+    } catch (error) {
+      AppLogger.error('Error starting vendor processing', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark a pending vendor as completed
+   */
+  completePendingVendor(id: string): { success: boolean; error?: string } {
+    try {
+      this.pendingQueueManager.markCompleted(id);
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error completing pending vendor', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark a pending vendor as failed
+   */
+  failPendingVendor(id: string, errorMessage: string): { success: boolean; error?: string } {
+    try {
+      this.pendingQueueManager.markFailed(id, errorMessage);
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error failing pending vendor', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Generate interactive session URL for VNC access
+   * TODO: Phase 4 - This will call Cloud Run /interactive endpoint
+   */
+  private generateInteractiveSessionUrl(record: PendingVendorRecord): string {
+    // Placeholder implementation
+    // In Phase 4, this will call Cloud Run and return the noVNC URL
+    const cloudRunUrl = this.getCloudRunUrl();
+    const token = this.generateSessionToken();
+    return `${cloudRunUrl}/interactive?vendor=${record.vendorKey}&token=${token}&recordId=${record.id}`;
+  }
+
+  /**
+   * Get Cloud Run URL from config
+   */
+  private getCloudRunUrl(): string {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      return props.getProperty('VENDOR_CLOUD_RUN_URL') || 'https://vendor-automation.run.app';
+    } catch {
+      return 'https://vendor-automation.run.app';
+    }
+  }
+
+  /**
+   * Generate a temporary session token
+   */
+  private generateSessionToken(): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 10);
+    return `${timestamp}-${random}`;
   }
 }

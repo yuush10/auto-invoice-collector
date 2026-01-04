@@ -936,6 +936,72 @@ function api_resetToDefaultPrompt(promptType: string): string {
 }
 
 // ============================================
+// Pending Vendor APIs (Phase 3.6)
+// ============================================
+
+function api_getPendingVendors(): string {
+  try {
+    const result = getWebAppApi().getPendingVendors();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getAllPendingVendorRecords(): string {
+  try {
+    const result = getWebAppApi().getAllPendingVendorRecords();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPendingVendorById(id: string): string {
+  try {
+    const result = getWebAppApi().getPendingVendorById(id);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_startVendorProcessing(id: string): string {
+  try {
+    const result = getWebAppApi().startVendorProcessing(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_completePendingVendor(id: string): string {
+  try {
+    const result = getWebAppApi().completePendingVendor(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_failPendingVendor(id: string, errorMessage: string): string {
+  try {
+    const result = getWebAppApi().failPendingVendor(id, errorMessage);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export pending vendor API functions
+(globalThis as any).api_getPendingVendors = api_getPendingVendors;
+(globalThis as any).api_getAllPendingVendorRecords = api_getAllPendingVendorRecords;
+(globalThis as any).api_getPendingVendorById = api_getPendingVendorById;
+(globalThis as any).api_startVendorProcessing = api_startVendorProcessing;
+(globalThis as any).api_completePendingVendor = api_completePendingVendor;
+(globalThis as any).api_failPendingVendor = api_failPendingVendor;
+
+// ============================================
 // Test Data Generation (Development Only)
 // ============================================
 
