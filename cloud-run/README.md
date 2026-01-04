@@ -91,9 +91,9 @@ Docker Compose provides a reproducible environment identical to Cloud Run produc
 
 ```bash
 # Copy environment template
-cp .env.example .env.local
+cp .env.example .env
 
-# Edit .env.local with your credentials
+# Edit .env with your credentials
 # (ANTHROPIC_API_KEY, IBJ_USERNAME, IBJ_PASSWORD, etc.)
 
 # Start the development environment

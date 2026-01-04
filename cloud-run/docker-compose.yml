@@ -19,14 +19,14 @@ services:
       - ENABLE_AI_LOGIN=${ENABLE_AI_LOGIN:-false}
       - AI_LOGIN_TIMEOUT=${AI_LOGIN_TIMEOUT:-60000}
       - AI_LOGIN_FALLBACK=${AI_LOGIN_FALLBACK:-true}
-      # Credentials (from .env.local)
+      # Credentials (from .env)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - IBJ_USERNAME=${IBJ_USERNAME}
       - IBJ_PASSWORD=${IBJ_PASSWORD}
       # Development settings
       - NODE_ENV=development
     env_file:
-      - path: .env.local
+      - path: .env
         required: false
     # Keep container running for exec commands
     stdin_open: true
