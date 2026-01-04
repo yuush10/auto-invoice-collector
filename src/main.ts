@@ -6,6 +6,7 @@
  */
 
 import { Config, SERVICES, VENDOR_SCHEDULE, VENDOR_CONFIGS } from './config';
+import { getPendingVendorQueueManager } from './modules/vendors/PendingVendorQueueManager';
 import { GmailSearcher } from './modules/gmail/GmailSearcher';
 import { AttachmentExtractor } from './modules/gmail/AttachmentExtractor';
 import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
@@ -1475,7 +1476,7 @@ function downloadAitemasuInvoices(): void {
 /**
  * Queue a vendor for manual processing
  * Called when a vendor has requiresManualTrigger=true
- * Sends notification email and stores pending task (Phase 2 will add Sheets storage)
+ * Stores pending task in sheet and sends notification email
  */
 function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date): void {
   const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
@@ -1483,9 +1484,10 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
 
   AppLogger.info(`[Vendor] Queuing ${vendorKey} for manual processing`);
 
-  // TODO: Phase 2 - Store in PendingVendorQueueManager sheet
-  // const queueManager = getPendingVendorQueueManager();
-  // queueManager.addPendingVendor(vendorKey, scheduledDate);
+  // Store in PendingVendorQueueManager sheet
+  const queueManager = getPendingVendorQueueManager();
+  const record = queueManager.addPendingVendor(vendorKey, scheduledDate);
+  AppLogger.info(`[Vendor] Created pending record: ${record.id}`);
 
   // Send notification email about pending vendor
   try {
