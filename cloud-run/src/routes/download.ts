@@ -15,11 +15,13 @@ import {
   DownloadResponse,
   VendorCredentials,
   DownloadedFile,
+  GoogleAdsCredentials,
   isVendorWhitelisted,
   getVendorConfig,
 } from '../vendors/types';
 import { getVendorRegistry } from '../vendors/VendorRegistry';
 import { getSecretManager } from '../services/SecretManager';
+import { GoogleAdsVendor } from '../vendors/GoogleAdsVendor';
 import {
   GeminiOcrService,
   DocTypeDetector,
@@ -241,7 +243,59 @@ router.post('/download', async (req: Request, res: Response) => {
     return res.status(501).json(response);
   }
 
-  // Get credentials
+  // Handle API-based vendors (specialHandling: 'api')
+  // These vendors don't need browser automation - they use direct API calls
+  if (vendorConfig.specialHandling === 'api') {
+    log(`Vendor ${request.vendorKey} uses API - bypassing browser automation`);
+
+    try {
+      const secretManager = getSecretManager();
+
+      // Fetch API credentials (different format from browser credentials)
+      const apiCredentials = await secretManager.getCredentialsRaw<GoogleAdsCredentials>(vendorConfig.secretName);
+      log('Retrieved API credentials from Secret Manager');
+
+      // Cast vendor to GoogleAdsVendor and call API method directly
+      const apiVendor = vendor as GoogleAdsVendor;
+      const files = await apiVendor.downloadWithApiCredentials(apiCredentials, request.options);
+      log(`Downloaded ${files.length} file(s) via API`);
+
+      const duration = Date.now() - startTime;
+      log(`Completed in ${duration}ms`);
+
+      const response: DownloadResponse = {
+        success: true,
+        vendorKey: request.vendorKey,
+        files,
+        debug: {
+          logs,
+          duration,
+        },
+      };
+
+      return res.json(response);
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      log(`API error: ${errorMessage}`);
+
+      const duration = Date.now() - startTime;
+
+      const response: DownloadResponse = {
+        success: false,
+        vendorKey: request.vendorKey,
+        files: [],
+        error: errorMessage,
+        debug: {
+          logs,
+          duration,
+        },
+      };
+
+      return res.status(500).json(response);
+    }
+  }
+
+  // Get credentials for browser-based vendors
   let credentials: VendorCredentials;
   let useStoredAuth = false;
   let storedAuth: AuthData | null = null;

@@ -4,7 +4,7 @@
 import { Page } from 'puppeteer';
 
 /**
- * Vendor credentials retrieved from Secret Manager
+ * Vendor credentials retrieved from Secret Manager (browser-based vendors)
  */
 export interface VendorCredentials {
   username: string;
@@ -17,6 +17,27 @@ export interface VendorCredentials {
   cookies?: string;
   // Chrome profile path (for services requiring existing login session)
   chromeProfilePath?: string;
+}
+
+/**
+ * Google Ads API credentials (API-based vendor)
+ * These are OAuth2 credentials, not username/password
+ */
+export interface GoogleAdsCredentials {
+  /** Google Ads API developer token */
+  developerToken: string;
+  /** OAuth2 client ID */
+  clientId: string;
+  /** OAuth2 client secret */
+  clientSecret: string;
+  /** OAuth2 refresh token */
+  refreshToken: string;
+  /** Google Ads customer ID (10-digit number without dashes) */
+  customerId: string;
+  /** Billing setup ID for invoice queries */
+  billingSetupId: string;
+  /** Login customer ID for manager accounts (optional) */
+  loginCustomerId?: string;
 }
 
 /**
