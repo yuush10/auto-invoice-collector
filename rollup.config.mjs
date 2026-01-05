@@ -176,6 +176,10 @@ function processScheduledVendors() {
   return globalThis.processScheduledVendors();
 }
 
+function processScheduledVendorsAsync() {
+  return globalThis.processScheduledVendorsAsync();
+}
+
 function processVendorManually(vendorKey) {
   return globalThis.processVendorManually(vendorKey);
 }

@@ -1766,6 +1766,7 @@ async function processScheduledVendorsAsync(): Promise<void> {
   }
 }
 (globalThis as any).processScheduledVendors = processScheduledVendors;
+(globalThis as any).processScheduledVendorsAsync = processScheduledVendorsAsync;
 
 /**
  * Process a specific vendor manually (regardless of schedule)
