@@ -18,27 +18,7 @@
 import { Page } from 'puppeteer';
 import { GoogleAdsApi, enums, services } from 'google-ads-api';
 import { BaseVendor } from './BaseVendor';
-import { VendorCredentials, DownloadOptions, DownloadedFile } from './types';
-
-/**
- * Extended credentials for Google Ads API
- */
-interface GoogleAdsCredentials extends VendorCredentials {
-  /** Google Ads API developer token */
-  developerToken: string;
-  /** OAuth2 client ID */
-  clientId: string;
-  /** OAuth2 client secret */
-  clientSecret: string;
-  /** OAuth2 refresh token */
-  refreshToken: string;
-  /** Google Ads customer ID (10-digit number without dashes) */
-  customerId: string;
-  /** Billing setup ID for invoice queries */
-  billingSetupId: string;
-  /** Login customer ID for manager accounts (optional) */
-  loginCustomerId?: string;
-}
+import { VendorCredentials, DownloadOptions, DownloadedFile, GoogleAdsCredentials } from './types';
 
 /**
  * Month name enum mapping
@@ -74,7 +54,7 @@ export class GoogleAdsVendor extends BaseVendor {
    * No browser login needed - uses API with OAuth tokens
    */
   async login(page: Page, credentials: VendorCredentials): Promise<void> {
-    this.credentials = credentials as GoogleAdsCredentials;
+    this.credentials = credentials as unknown as GoogleAdsCredentials;
 
     // Validate required fields
     if (!this.credentials.developerToken) {
@@ -120,10 +100,65 @@ export class GoogleAdsVendor extends BaseVendor {
 
   /**
    * Download invoices using Google Ads API
+   * This method requires login() to be called first
    */
   async downloadInvoices(page: Page, options?: DownloadOptions): Promise<DownloadedFile[]> {
     if (!this.credentials || !this.apiClient) {
       throw new Error('Not authenticated. Call login() first.');
+    }
+
+    return this.downloadInvoicesWithCredentials(this.credentials, options);
+  }
+
+  /**
+   * Download invoices using API credentials directly
+   * This method bypasses browser automation entirely - for use with specialHandling: 'api'
+   */
+  async downloadWithApiCredentials(
+    credentials: GoogleAdsCredentials,
+    options?: DownloadOptions
+  ): Promise<DownloadedFile[]> {
+    // Validate required fields
+    if (!credentials.developerToken) {
+      throw new Error('Google Ads developer token is required');
+    }
+    if (!credentials.clientId || !credentials.clientSecret) {
+      throw new Error('Google Ads OAuth2 client credentials are required');
+    }
+    if (!credentials.refreshToken) {
+      throw new Error('Google Ads refresh token is required');
+    }
+    if (!credentials.customerId) {
+      throw new Error('Google Ads customer ID is required');
+    }
+    if (!credentials.billingSetupId) {
+      throw new Error('Google Ads billing setup ID is required');
+    }
+
+    // Store credentials for internal use
+    this.credentials = credentials;
+
+    // Initialize API client
+    this.apiClient = new GoogleAdsApi({
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
+      developer_token: credentials.developerToken,
+    });
+
+    this.log('API client initialized for direct API call');
+
+    return this.downloadInvoicesWithCredentials(credentials, options);
+  }
+
+  /**
+   * Internal method to download invoices with credentials
+   */
+  private async downloadInvoicesWithCredentials(
+    credentials: GoogleAdsCredentials,
+    options?: DownloadOptions
+  ): Promise<DownloadedFile[]> {
+    if (!this.apiClient) {
+      throw new Error('API client not initialized');
     }
 
     const files: DownloadedFile[] = [];
@@ -135,18 +170,18 @@ export class GoogleAdsVendor extends BaseVendor {
     try {
       // Create customer instance
       const customer = this.apiClient.Customer({
-        customer_id: this.credentials.customerId,
-        refresh_token: this.credentials.refreshToken,
-        login_customer_id: this.credentials.loginCustomerId,
+        customer_id: credentials.customerId,
+        refresh_token: credentials.refreshToken,
+        login_customer_id: credentials.loginCustomerId,
       });
 
       // Build billing setup resource name
-      const billingSetup = `customers/${this.credentials.customerId}/billingSetups/${this.credentials.billingSetupId}`;
+      const billingSetup = `customers/${credentials.customerId}/billingSetups/${credentials.billingSetupId}`;
 
       // List invoices for the specified month
       this.log(`Querying invoices for billing setup: ${billingSetup}`);
       const request = {
-        customer_id: this.credentials.customerId,
+        customer_id: credentials.customerId,
         billing_setup: billingSetup,
         issue_year: year,
         issue_month: enums.MonthOfYear[monthName],
