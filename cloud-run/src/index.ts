@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import http from 'http';
+import { Socket } from 'net';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import convertRouter from './routes/convert';
 import downloadRouter from './routes/download';
@@ -99,7 +100,7 @@ server.on('upgrade', (req, socket, head) => {
     }
 
     console.log(`[VNC WS Auth] Session validated for websocket: ${sessionId}`);
-    vncProxy.upgrade(req, socket as any, head);
+    vncProxy.upgrade(req, socket as Socket, head);
   }
 });
 
