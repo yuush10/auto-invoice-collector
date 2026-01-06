@@ -4,6 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
+import crypto from 'crypto';
 import puppeteer, { Browser, Page } from 'puppeteer';
 
 /**
@@ -12,6 +13,8 @@ import puppeteer, { Browser, Page } from 'puppeteer';
 export interface VncSession {
   /** Unique session ID */
   sessionId: string;
+  /** Secure session token for browser access authentication */
+  sessionToken: string;
   /** Vendor key being processed */
   vendorKey: string;
   /** Record ID from pending queue */
@@ -58,24 +61,35 @@ export interface StartSessionOptions {
  */
 export class VncSessionManager {
   private sessions: Map<string, VncSession> = new Map();
-  private nextDisplayNumber = 99;
-  private nextVncPort = 5900;
-  private nextWebsocketPort = 6080;
+  // Fixed ports - only one session per container (proxy limitation)
+  private readonly DISPLAY_NUMBER = 99;
+  private readonly VNC_PORT = 5900;
+  private readonly WEBSOCKET_PORT = 6080;
 
   /**
    * Start a new interactive VNC session
+   * Note: Only one session per container due to fixed proxy port
    */
   async startSession(options: StartSessionOptions): Promise<VncSession> {
+    // Check if there's already an active session
+    const activeSessions = this.getActiveSessions();
+    if (activeSessions.length > 0) {
+      throw new Error('A VNC session is already active. Complete or fail the existing session first.');
+    }
+
     const sessionId = this.generateSessionId();
-    const display = this.getNextDisplay();
-    const vncPort = this.getNextVncPort();
-    const websocketPort = this.getNextWebsocketPort();
+    const sessionToken = this.generateSessionToken();
+    // Use fixed ports - only one session per container
+    const display = this.DISPLAY_NUMBER;
+    const vncPort = this.VNC_PORT;
+    const websocketPort = this.WEBSOCKET_PORT;
     const timeoutMinutes = options.timeoutMinutes || 30;
 
     console.log(`[VNC] Starting session ${sessionId} for vendor ${options.vendorKey}`);
 
     const session: VncSession = {
       sessionId,
+      sessionToken,
       vendorKey: options.vendorKey,
       recordId: options.recordId,
       display,
@@ -168,9 +182,10 @@ export class VncSessionManager {
       const displayStr = `:${session.display}`;
       console.log(`[VNC] Starting Xvfb on display ${displayStr}`);
 
+      // Use 1280x720 for better fit on laptop screens
       const xvfb = spawn('Xvfb', [
         displayStr,
-        '-screen', '0', '1920x1080x24',
+        '-screen', '0', '1280x720x24',
         '-ac',
         '-nolisten', 'tcp',
       ]);
@@ -296,25 +311,41 @@ export class VncSessionManager {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         `--display=${displayStr}`,
-        '--window-size=1920,1080',
-        '--start-maximized',
+        '--window-size=1280,720',
+        // Anti-detection flags to reduce reCAPTCHA suspicion
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
       ],
+      ignoreDefaultArgs: ['--enable-automation'],
     });
 
     session.page = await session.browser.newPage();
-    await session.page.setViewport({ width: 1920, height: 1080 });
+    await session.page.setViewport({ width: 1280, height: 670 });
+
+    // Hide webdriver property to reduce automation detection
+    // Use string form to avoid TypeScript errors with browser globals
+    await session.page.evaluateOnNewDocument(`
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    `);
 
     console.log(`[VNC] Browser started successfully`);
   }
 
   /**
    * Generate noVNC URL for client access
+   * Includes sessionId and token for authentication
    */
   private generateNoVncUrl(session: VncSession): string {
-    // In production, this would be the Cloud Run URL
-    // For local testing, use localhost
-    const host = process.env.CLOUD_RUN_URL || `http://localhost:${session.websocketPort}`;
-    return `${host}/vnc.html?autoconnect=true&resize=remote`;
+    const authParams = `sessionId=${session.sessionId}&token=${session.sessionToken}`;
+    // Check if running on Cloud Run (K_SERVICE is set by Cloud Run)
+    if (process.env.K_SERVICE) {
+      // Use Load Balancer URL for browser access (bypasses Cloud Run IAM)
+      // LOAD_BALANCER_URL should be set to the LB domain (e.g., https://vnc.executive-bridal.com)
+      const lbUrl = process.env.LOAD_BALANCER_URL || 'https://vnc.executive-bridal.com';
+      return `${lbUrl}/vnc/vnc.html?${authParams}&autoconnect=true&resize=remote`;
+    }
+    // Local development - direct websocket access
+    return `http://localhost:${session.websocketPort}/vnc.html?${authParams}&autoconnect=true&resize=remote`;
   }
 
   /**
@@ -385,25 +416,31 @@ export class VncSessionManager {
   }
 
   /**
-   * Get next available display number
+   * Generate cryptographically secure session token
    */
-  private getNextDisplay(): number {
-    return this.nextDisplayNumber++;
+  private generateSessionToken(): string {
+    return crypto.randomBytes(32).toString('base64url');
   }
 
   /**
-   * Get next available VNC port
+   * Validate session token
+   * Returns the session if valid, undefined otherwise
    */
-  private getNextVncPort(): number {
-    return this.nextVncPort++;
+  validateSessionToken(sessionId: string, token: string): VncSession | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+    if (session.sessionToken !== token) {
+      return undefined;
+    }
+    // Check if session has expired
+    if (new Date() > session.expiresAt) {
+      return undefined;
+    }
+    return session;
   }
 
-  /**
-   * Get next available WebSocket port
-   */
-  private getNextWebsocketPort(): number {
-    return this.nextWebsocketPort++;
-  }
 }
 
 // Export singleton instance

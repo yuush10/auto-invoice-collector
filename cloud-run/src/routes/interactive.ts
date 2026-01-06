@@ -48,7 +48,10 @@ router.post('/interactive/start', async (req: Request, res: Response) => {
     if (session.page) {
       const loginUrl = vendor.loginUrl;
       console.log(`[Interactive] Navigating to: ${loginUrl}`);
-      await session.page.goto(loginUrl, { waitUntil: 'networkidle0' });
+      await session.page.goto(loginUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000  // 60 seconds for slow pages
+      });
     }
 
     res.json({
