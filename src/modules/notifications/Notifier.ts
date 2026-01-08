@@ -291,4 +291,122 @@ export class Notifier {
     report += `お早めに更新をお願いします。`;
     return report;
   }
+
+  /**
+   * Send pending vendor notification with local collector instructions
+   * For vendors that require local browser automation (e.g., IBJ with reCAPTCHA)
+   */
+  sendPendingVendorNotification(
+    vendorKey: string,
+    vendorName: string,
+    targetMonth: string,
+    localCollectorCommand: string,
+    webAppUrl?: string
+  ): void {
+    try {
+      const subject = `[Auto Invoice Collector] ${vendorName}請求書収集 - 手動処理が必要です`;
+      const htmlBody = this.formatPendingVendorNotification(
+        vendorName,
+        targetMonth,
+        localCollectorCommand,
+        webAppUrl
+      );
+
+      GmailApp.sendEmail(this.adminEmail, subject, '', { htmlBody });
+      AppLogger.info(
+        `Sent pending vendor notification for ${vendorKey} to ${this.adminEmail}`
+      );
+    } catch (error) {
+      AppLogger.error('Error sending pending vendor notification', error as Error);
+    }
+  }
+
+  /**
+   * Format pending vendor notification as HTML
+   */
+  private formatPendingVendorNotification(
+    vendorName: string,
+    targetMonth: string,
+    localCollectorCommand: string,
+    webAppUrl?: string
+  ): string {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #0d6efd; color: white; padding: 15px; border-radius: 5px 5px 0 0; }
+    .content { background: #f8f9fa; padding: 20px; border: 1px solid #ddd; border-top: none; }
+    .section { margin-bottom: 20px; }
+    .section h3 { color: #495057; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+    .info-row { margin: 8px 0; }
+    .label { font-weight: bold; color: #666; }
+    .command-box { background: #212529; color: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; word-break: break-all; margin: 10px 0; }
+    .instructions { background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 5px; padding: 15px; }
+    .instructions ol { margin: 10px 0; padding-left: 20px; }
+    .instructions li { margin: 8px 0; }
+    .webapp-link { display: inline-block; background: #0d6efd; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 10px; }
+    .note { background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 10px; margin-top: 15px; font-size: 13px; }
+    .footer { margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2 style="margin:0;">請求書収集 - 手動処理が必要です</h2>
+    </div>
+    <div class="content">
+      <div class="section">
+        <h3>対象</h3>
+        <div class="info-row"><span class="label">ベンダー:</span> ${vendorName}</div>
+        <div class="info-row"><span class="label">対象月:</span> ${targetMonth}</div>
+      </div>
+
+      <div class="section">
+        <h3>なぜ手動処理が必要なのか</h3>
+        <p>${vendorName}はreCAPTCHA認証を使用しているため、自動処理ができません。お使いのMacで以下のコマンドを実行し、CAPTCHAを手動で解決してください。CAPTCHAの解決後、請求書のダウンロードとアップロードは自動的に行われます。</p>
+      </div>
+
+      <div class="section">
+        <h3>実行手順</h3>
+        <div class="instructions">
+          <ol>
+            <li><strong>ターミナル</strong>を開いてください</li>
+            <li>以下のコマンドをコピーして実行してください:
+              <div class="command-box">${localCollectorCommand}</div>
+            </li>
+            <li>ブラウザが開いたら、<strong>ログイン情報を入力</strong>してください</li>
+            <li><strong>reCAPTCHAを解決</strong>してログインボタンをクリック</li>
+            <li>OTPコードは自動的に取得されますが、取得できない場合はターミナルに入力してください</li>
+            <li>請求書が自動的にダウンロードされ、Google Driveにアップロードされます</li>
+          </ol>
+        </div>
+      </div>
+
+      ${webAppUrl ? `
+      <div class="section">
+        <h3>Webアプリから実行</h3>
+        <p>または、Review Web Appからも実行できます:</p>
+        <a href="${webAppUrl}" class="webapp-link">Review Web Appを開く</a>
+      </div>
+      ` : ''}
+
+      <div class="note">
+        <strong>注意:</strong> このコマンドはMac上でNode.js 18以上がインストールされている必要があります。初回実行時はnpmパッケージのダウンロードに数分かかることがあります。
+      </div>
+
+      <div class="footer">
+        <p>このメールは Auto Invoice Collector から自動送信されています。</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+    return html;
+  }
 }

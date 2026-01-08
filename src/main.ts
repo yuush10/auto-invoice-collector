@@ -1002,6 +1002,52 @@ function api_failPendingVendor(id: string, errorMessage: string): string {
 (globalThis as any).api_failPendingVendor = api_failPendingVendor;
 
 // ============================================
+// Local Collector APIs (Phase 3.6 - Local Browser Automation)
+// ============================================
+
+function api_getLocalCollectorCommand(id: string): string {
+  try {
+    const result = getWebAppApi().getLocalCollectorCommand(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_uploadFromLocalCollector(
+  token: string,
+  vendorKey: string,
+  targetMonth: string,
+  fileJson: string
+): string {
+  try {
+    const file = JSON.parse(fileJson);
+    const result = getWebAppApi().uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_markVendorCompleteFromLocal(
+  token: string,
+  vendorKey: string,
+  targetMonth: string
+): string {
+  try {
+    const result = getWebAppApi().markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export local collector API functions
+(globalThis as any).api_getLocalCollectorCommand = api_getLocalCollectorCommand;
+(globalThis as any).api_uploadFromLocalCollector = api_uploadFromLocalCollector;
+(globalThis as any).api_markVendorCompleteFromLocal = api_markVendorCompleteFromLocal;
+
+// ============================================
 // Test Data Generation (Development Only)
 // ============================================
 

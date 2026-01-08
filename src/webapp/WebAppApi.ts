@@ -908,4 +908,214 @@ export class WebAppApi {
     const random = Math.random().toString(36).substring(2, 10);
     return `${timestamp}-${random}`;
   }
+
+  // ============================================
+  // Local Collector APIs
+  // ============================================
+
+  /**
+   * Generate local collector command for a pending vendor
+   * Returns a command string that the user can copy and run on their Mac
+   */
+  getLocalCollectorCommand(id: string): { success: boolean; command?: string; error?: string } {
+    try {
+      const record = this.pendingQueueManager.getRecordById(id);
+      if (!record) {
+        return { success: false, error: 'Pending vendor record not found' };
+      }
+
+      // Calculate target month from scheduled date (default to previous month)
+      const targetMonth = this.calculateTargetMonth(record.scheduledDate);
+
+      // Generate one-time token
+      const token = this.generateLocalCollectorToken(record.id);
+
+      // Build the command
+      const command = `npx @auto-invoice/local-collector collect --vendor=${record.vendorKey} --target-month=${targetMonth} --token=${token}`;
+
+      AppLogger.info(`[WebAppApi] Generated local collector command for: ${id}`);
+
+      return { success: true, command };
+    } catch (error) {
+      AppLogger.error('Error generating local collector command', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Calculate target month from scheduled date
+   * Invoices are typically for the previous month
+   */
+  private calculateTargetMonth(scheduledDate: Date): string {
+    const date = new Date(scheduledDate);
+    // Go to previous month
+    date.setMonth(date.getMonth() - 1);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  }
+
+  /**
+   * Upload file from local collector
+   * Called by the local collector after successful download
+   */
+  uploadFromLocalCollector(
+    token: string,
+    _vendorKey: string,
+    targetMonth: string,
+    file: { filename: string; data: string; mimeType: string }
+  ): { success: boolean; fileId?: string; error?: string } {
+    try {
+      // Validate token
+      if (!this.validateLocalCollectorToken(token)) {
+        return { success: false, error: 'Invalid or expired token' };
+      }
+
+      // Decode base64 file data
+      const fileData = Utilities.base64Decode(file.data);
+      const blob = Utilities.newBlob(fileData, file.mimeType, file.filename);
+
+      // Get target folder (by year-month)
+      const folder = this.getOrCreateInvoiceFolder(targetMonth);
+
+      // Upload file
+      const uploadedFile = folder.createFile(blob);
+      const fileId = uploadedFile.getId();
+
+      AppLogger.info(`[WebAppApi] Uploaded file from local collector: ${file.filename} -> ${fileId}`);
+
+      return { success: true, fileId };
+    } catch (error) {
+      AppLogger.error('Error uploading from local collector', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark vendor complete from local collector
+   */
+  markVendorCompleteFromLocal(
+    token: string,
+    vendorKey: string,
+    targetMonth: string
+  ): { success: boolean; error?: string } {
+    try {
+      // Validate token
+      if (!this.validateLocalCollectorToken(token)) {
+        return { success: false, error: 'Invalid or expired token' };
+      }
+
+      // Find the pending record by vendor key and matching target month
+      const records = this.pendingQueueManager.getPendingVendors();
+      const record = records.find(r =>
+        r.vendorKey === vendorKey &&
+        this.calculateTargetMonth(r.scheduledDate) === targetMonth
+      );
+
+      if (record) {
+        this.pendingQueueManager.markCompleted(record.id);
+        AppLogger.info(`[WebAppApi] Marked vendor complete from local: ${vendorKey} ${targetMonth}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error marking vendor complete from local', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Generate token for local collector
+   * Token format: {recordId}:{timestamp}:{signature}
+   */
+  private generateLocalCollectorToken(recordId: string): string {
+    const timestamp = Date.now();
+    const payload = `${recordId}:${timestamp}`;
+    // Simple signature using script properties secret
+    const secret = this.getLocalCollectorSecret();
+    const signature = Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      payload + secret
+    ).map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('').substring(0, 16);
+    return `${payload}:${signature}`;
+  }
+
+  /**
+   * Validate local collector token
+   * Tokens expire after 24 hours
+   */
+  private validateLocalCollectorToken(token: string): boolean {
+    try {
+      const parts = token.split(':');
+      if (parts.length !== 3) {
+        return false;
+      }
+
+      const [recordId, timestampStr, providedSignature] = parts;
+      const timestamp = parseInt(timestampStr, 10);
+
+      // Check expiration (24 hours)
+      const now = Date.now();
+      if (now - timestamp > 24 * 60 * 60 * 1000) {
+        return false;
+      }
+
+      // Verify signature
+      const payload = `${recordId}:${timestampStr}`;
+      const secret = this.getLocalCollectorSecret();
+      const expectedSignature = Utilities.computeDigest(
+        Utilities.DigestAlgorithm.SHA_256,
+        payload + secret
+      ).map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('').substring(0, 16);
+
+      return expectedSignature === providedSignature;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get secret for token signing
+   */
+  private getLocalCollectorSecret(): string {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      let secret = props.getProperty('LOCAL_COLLECTOR_SECRET');
+      if (!secret) {
+        // Generate and store a new secret
+        secret = Utilities.getUuid();
+        props.setProperty('LOCAL_COLLECTOR_SECRET', secret);
+      }
+      return secret;
+    } catch {
+      return 'default-secret-for-testing';
+    }
+  }
+
+  /**
+   * Get or create invoice folder for a specific month
+   */
+  private getOrCreateInvoiceFolder(yearMonth: string): GoogleAppsScript.Drive.Folder {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const rootFolderId = props.getProperty('INVOICE_FOLDER_ID');
+      const rootFolder = rootFolderId
+        ? DriveApp.getFolderById(rootFolderId)
+        : DriveApp.getRootFolder();
+
+      // Parse year and month
+      const [year, month] = yearMonth.split('-');
+      const folderName = `${year}-${month}`;
+
+      // Find or create month folder
+      const folders = rootFolder.getFoldersByName(folderName);
+      if (folders.hasNext()) {
+        return folders.next();
+      }
+
+      return rootFolder.createFolder(folderName);
+    } catch {
+      return DriveApp.getRootFolder();
+    }
+  }
 }

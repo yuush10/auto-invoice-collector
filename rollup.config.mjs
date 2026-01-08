@@ -245,6 +245,19 @@ function api_failPendingVendor(id, errorMessage) {
 function queueVendorForManualProcessing(vendorKey) {
   return globalThis.queueVendorForManualProcessing(vendorKey);
 }
+
+// Local collector functions (Phase 3.6 - Local Browser Automation)
+function api_getLocalCollectorCommand(id) {
+  return globalThis.api_getLocalCollectorCommand(id);
+}
+
+function api_uploadFromLocalCollector(token, vendorKey, targetMonth, file) {
+  return globalThis.api_uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+}
+
+function api_markVendorCompleteFromLocal(token, vendorKey, targetMonth) {
+  return globalThis.api_markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+}
 `
   },
   plugins: [
