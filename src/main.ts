@@ -696,6 +696,45 @@ function doGet(
 }
 
 /**
+ * Web App POST handler - handles local collector uploads
+ */
+function doPost(
+  e: GoogleAppsScript.Events.DoPost
+): GoogleAppsScript.Content.TextOutput {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const { action, token, vendorKey, targetMonth, file } = data;
+
+    AppLogger.info(`[doPost] Received action: ${action}`);
+
+    let result: { success: boolean; message?: string; fileId?: string; error?: string };
+
+    switch (action) {
+      case 'uploadInvoice':
+        result = getWebAppApi().uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+        break;
+
+      case 'markVendorComplete':
+        result = getWebAppApi().markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+        break;
+
+      default:
+        result = { success: false, error: `Unknown action: ${action}` };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    AppLogger.error('[doPost] Error processing request', error as Error);
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: false, error: (error as Error).message })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+(globalThis as any).doPost = doPost;
+
+/**
  * Include HTML file content (for templates)
  * @param filename - File name without extension (e.g., 'style.css' for dist/style.css.html)
  */
@@ -1008,6 +1047,83 @@ function api_failPendingVendor(id: string, errorMessage: string): string {
 (globalThis as any).api_startVendorProcessing = api_startVendorProcessing;
 (globalThis as any).api_completePendingVendor = api_completePendingVendor;
 (globalThis as any).api_failPendingVendor = api_failPendingVendor;
+
+// ============================================
+// Local Collector APIs (Phase 3.6 - Local Browser Automation)
+// ============================================
+
+function api_getLocalCollectorCommand(id: string): string {
+  try {
+    const result = getWebAppApi().getLocalCollectorCommand(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_uploadFromLocalCollector(
+  token: string,
+  vendorKey: string,
+  targetMonth: string,
+  fileJson: string
+): string {
+  try {
+    const file = JSON.parse(fileJson);
+    const result = getWebAppApi().uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_markVendorCompleteFromLocal(
+  token: string,
+  vendorKey: string,
+  targetMonth: string
+): string {
+  try {
+    const result = getWebAppApi().markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export local collector API functions
+(globalThis as any).api_getLocalCollectorCommand = api_getLocalCollectorCommand;
+(globalThis as any).api_uploadFromLocalCollector = api_uploadFromLocalCollector;
+(globalThis as any).api_markVendorCompleteFromLocal = api_markVendorCompleteFromLocal;
+
+/**
+ * Test function to get local collector command for IBJ
+ * This will:
+ * 1. Queue IBJ for manual processing (creates pending record)
+ * 2. Get the local collector command with token
+ * Run this from Apps Script editor to get a token for testing
+ */
+function testGetLocalCollectorCommand(): void {
+  // First, queue IBJ for manual processing
+  Logger.log('=== Queueing IBJ for Manual Processing ===');
+
+  const queueManager = getPendingVendorQueueManager();
+  const scheduledDate = new Date();
+  const record = queueManager.addPendingVendor('ibj', scheduledDate);
+
+  Logger.log('Created pending record: ' + record.id);
+
+  Logger.log('');
+  Logger.log('=== Getting Local Collector Command ===');
+  const result = getWebAppApi().getLocalCollectorCommand(record.id);
+  Logger.log(JSON.stringify(result, null, 2));
+
+  if (result.success && result.command) {
+    Logger.log('');
+    Logger.log('Copy this command to run in terminal:');
+    Logger.log(result.command);
+  }
+}
+
+(globalThis as any).testGetLocalCollectorCommand = testGetLocalCollectorCommand;
 
 // ============================================
 // Test Data Generation (Development Only)
