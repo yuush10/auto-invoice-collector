@@ -119,6 +119,7 @@ export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
   'aitemasu': { day: 1, hour: 8, enabled: true },
   'google-ads': { day: 4, hour: 8, enabled: true },
   'ibj': { day: 11, hour: 8, enabled: true, requiresManualTrigger: true },
+  'canva': { day: 11, hour: 9, enabled: true },
 };
 
 /**
@@ -148,6 +149,14 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
     loginRequired: true,
     specialHandling: 'api',
     portalUrl: 'https://ads.google.com/',
+  },
+  {
+    vendorKey: 'canva',
+    vendorName: 'Canva',
+    domainPatterns: ['canva.com'],
+    loginRequired: true,
+    specialHandling: 'oauth',
+    portalUrl: 'https://www.canva.com/settings/billing',
   },
 ];
 
