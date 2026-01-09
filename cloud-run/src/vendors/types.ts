@@ -201,6 +201,14 @@ export const VENDOR_WHITELIST: VendorConfig[] = [
     domainPatterns: ['ads.google.com'],
     specialHandling: 'api',
   },
+  {
+    vendorKey: 'canva',
+    vendorName: 'Canva',
+    secretName: 'vendor-canva-credentials',
+    enabled: true,
+    domainPatterns: ['canva.com'],
+    specialHandling: 'oauth',
+  },
 ];
 
 /**
