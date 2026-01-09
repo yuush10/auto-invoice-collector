@@ -1,9 +1,13 @@
 /**
  * OTP Service for Local Collector
- * Fetches OTP from Gmail API with manual terminal fallback
+ * Fetches OTP from Gmail API using OAuth2 with user consent
  */
 import { google, gmail_v1 } from 'googleapis';
 import * as readlineSync from 'readline-sync';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as http from 'http';
+import * as url from 'url';
 
 /**
  * OTP email configuration
@@ -25,7 +29,33 @@ export const IBJ_OTP_CONFIG: OtpEmailConfig = {
 };
 
 /**
- * OTP Service with Gmail API and manual fallback
+ * OAuth2 credentials structure
+ */
+interface OAuth2Credentials {
+  client_id: string;
+  client_secret: string;
+  redirect_uris: string[];
+}
+
+/**
+ * Stored tokens structure
+ */
+interface StoredTokens {
+  access_token: string;
+  refresh_token: string;
+  expiry_date: number;
+}
+
+// OAuth2 scopes needed for Gmail
+const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+
+// Config directory for storing credentials and tokens
+const CONFIG_DIR = path.join(process.env.HOME || '', '.local-collector');
+const CREDENTIALS_PATH = path.join(CONFIG_DIR, 'gmail-credentials.json');
+const TOKEN_PATH = path.join(CONFIG_DIR, 'gmail-token.json');
+
+/**
+ * OTP Service with Gmail API OAuth2 and manual fallback
  */
 export class OtpService {
   private gmail: gmail_v1.Gmail | null = null;
@@ -37,8 +67,7 @@ export class OtpService {
   }
 
   /**
-   * Initialize Gmail API client
-   * For local execution, uses Application Default Credentials
+   * Initialize Gmail API client using OAuth2
    */
   async initialize(): Promise<boolean> {
     if (this.initialized) {
@@ -48,31 +77,50 @@ export class OtpService {
     console.log(`[OTP] Initializing Gmail API for ${this.targetEmail}`);
 
     try {
-      // Try using Application Default Credentials with impersonation
-      const auth = new google.auth.GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
-      });
-
-      const credentials = await auth.getCredentials();
-      const serviceAccountEmail = credentials.client_email;
-
-      if (!serviceAccountEmail) {
-        console.log('[OTP] No service account found in default credentials');
+      // Check if credentials file exists
+      if (!fs.existsSync(CREDENTIALS_PATH)) {
+        console.log('[OTP] Gmail credentials not found.');
+        console.log(`[OTP] Please create credentials at: ${CREDENTIALS_PATH}`);
+        this.printCredentialsSetupInstructions();
         return false;
       }
 
-      console.log(`[OTP] Using service account: ${serviceAccountEmail}`);
+      // Load credentials
+      const credentialsContent = fs.readFileSync(CREDENTIALS_PATH, 'utf-8');
+      const credentials = JSON.parse(credentialsContent);
+      const { client_id, client_secret, redirect_uris } = credentials.installed || credentials.web as OAuth2Credentials;
 
-      // Create JWT client for domain-wide delegation
-      const jwtClient = new google.auth.JWT({
-        email: serviceAccountEmail,
-        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
-        subject: this.targetEmail,
-      });
+      // Create OAuth2 client
+      const oauth2Client = new google.auth.OAuth2(
+        client_id,
+        client_secret,
+        redirect_uris[0] || 'http://localhost:3000/oauth2callback'
+      );
 
-      await jwtClient.authorize();
+      // Check for existing token
+      if (fs.existsSync(TOKEN_PATH)) {
+        const tokenContent = fs.readFileSync(TOKEN_PATH, 'utf-8');
+        const tokens = JSON.parse(tokenContent) as StoredTokens;
+        oauth2Client.setCredentials(tokens);
 
-      this.gmail = google.gmail({ version: 'v1', auth: jwtClient });
+        // Check if token is expired
+        if (tokens.expiry_date && tokens.expiry_date < Date.now()) {
+          console.log('[OTP] Token expired, refreshing...');
+          try {
+            const { credentials: newCredentials } = await oauth2Client.refreshAccessToken();
+            oauth2Client.setCredentials(newCredentials);
+            this.saveToken(newCredentials as StoredTokens);
+          } catch (refreshError) {
+            console.log('[OTP] Token refresh failed, need to re-authorize');
+            await this.authorizeOAuth2(oauth2Client);
+          }
+        }
+      } else {
+        // No token, need to authorize
+        await this.authorizeOAuth2(oauth2Client);
+      }
+
+      this.gmail = google.gmail({ version: 'v1', auth: oauth2Client });
       this.initialized = true;
 
       console.log('[OTP] Gmail API initialized successfully');
@@ -81,6 +129,135 @@ export class OtpService {
       console.log(`[OTP] Gmail API initialization failed: ${(error as Error).message}`);
       return false;
     }
+  }
+
+  /**
+   * Run OAuth2 authorization flow
+   */
+  private async authorizeOAuth2(oauth2Client: InstanceType<typeof google.auth.OAuth2>): Promise<void> {
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent', // Force consent to get refresh token
+    });
+
+    console.log('');
+    console.log('='.repeat(60));
+    console.log('GMAIL AUTHORIZATION REQUIRED');
+    console.log('');
+    console.log('Opening browser for Gmail authorization...');
+    console.log('If browser does not open, visit this URL:');
+    console.log('');
+    console.log(authUrl);
+    console.log('='.repeat(60));
+    console.log('');
+
+    // Try to open browser
+    const { exec } = await import('child_process');
+    exec(`open "${authUrl}"`);
+
+    // Start local server to receive callback
+    const code = await this.waitForAuthCode();
+
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    // Save tokens
+    this.saveToken(tokens as StoredTokens);
+
+    console.log('[OTP] Gmail authorization successful!');
+  }
+
+  /**
+   * Wait for OAuth2 callback with authorization code
+   */
+  private waitForAuthCode(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const parsedUrl = url.parse(req.url || '', true);
+
+        if (parsedUrl.pathname === '/oauth2callback') {
+          const code = parsedUrl.query.code as string;
+          const error = parsedUrl.query.error as string;
+
+          if (error) {
+            res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<h1>Authorization failed</h1><p>${error}</p>`);
+            server.close();
+            reject(new Error(`Authorization failed: ${error}`));
+            return;
+          }
+
+          if (code) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`
+              <html>
+              <head><title>Authorization Successful</title></head>
+              <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1>✅ Authorization Successful!</h1>
+                <p>You can close this window and return to the terminal.</p>
+              </body>
+              </html>
+            `);
+            server.close();
+            resolve(code);
+            return;
+          }
+        }
+
+        res.writeHead(404);
+        res.end('Not found');
+      });
+
+      server.listen(3000, () => {
+        console.log('[OTP] Waiting for authorization on http://localhost:3000/oauth2callback ...');
+      });
+
+      // Timeout after 2 minutes
+      setTimeout(() => {
+        server.close();
+        reject(new Error('Authorization timeout'));
+      }, 120000);
+    });
+  }
+
+  /**
+   * Save tokens to file
+   */
+  private saveToken(tokens: StoredTokens): void {
+    // Ensure config directory exists
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+    console.log(`[OTP] Token saved to ${TOKEN_PATH}`);
+  }
+
+  /**
+   * Print instructions for setting up credentials
+   */
+  private printCredentialsSetupInstructions(): void {
+    console.log('');
+    console.log('='.repeat(60));
+    console.log('GMAIL CREDENTIALS SETUP');
+    console.log('='.repeat(60));
+    console.log('');
+    console.log('1. Go to Google Cloud Console:');
+    console.log('   https://console.cloud.google.com/apis/credentials');
+    console.log('');
+    console.log('2. Create OAuth 2.0 Client ID:');
+    console.log('   - Application type: Desktop app');
+    console.log('   - Name: Local Collector');
+    console.log('');
+    console.log('3. Download the JSON credentials');
+    console.log('');
+    console.log('4. Save as:');
+    console.log(`   ${CREDENTIALS_PATH}`);
+    console.log('');
+    console.log('5. Run the collector again');
+    console.log('='.repeat(60));
+    console.log('');
   }
 
   /**
@@ -147,7 +324,7 @@ export class OtpService {
         return result;
       }
 
-      console.log(`[OTP] OTP not found, retrying in ${pollIntervalMs}ms...`);
+      console.log(`[OTP] OTP not found, retrying in ${pollIntervalMs / 1000}s...`);
       await this.sleep(pollIntervalMs);
     }
 

@@ -49,6 +49,10 @@ function doGet(e) {
   return globalThis.doGet(e);
 }
 
+function doPost(e) {
+  return globalThis.doPost(e);
+}
+
 function include(filename) {
   return globalThis.include(filename);
 }
@@ -257,6 +261,11 @@ function api_uploadFromLocalCollector(token, vendorKey, targetMonth, file) {
 
 function api_markVendorCompleteFromLocal(token, vendorKey, targetMonth) {
   return globalThis.api_markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+}
+
+// Test function for local collector
+function testGetLocalCollectorCommand() {
+  return globalThis.testGetLocalCollectorCommand();
 }
 `
   },

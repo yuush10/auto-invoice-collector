@@ -23,10 +23,10 @@ export class Uploader {
 
   constructor(token?: string) {
     this.token = token;
-    // GAS Web App URL - this would be configured
+    // GAS Web App URL
     this.gasWebAppUrl =
       process.env.GAS_WEBAPP_URL ||
-      'https://script.google.com/macros/s/AKfycbxxxxxxxxx/exec';
+      'https://script.google.com/macros/s/AKfycbzJDXRs2pgD-K9ac-rfXualEfAIbAn9jEtYr9ui1WKYvvrJRh1uiyRoT8cqRq8Q5WH9/exec';
   }
 
   /**
