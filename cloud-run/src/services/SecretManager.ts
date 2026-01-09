@@ -58,8 +58,12 @@ export class SecretManager {
       const credentials = JSON.parse(secretData) as VendorCredentials;
 
       // Validate required fields
-      if (!credentials.username || !credentials.password) {
-        throw new Error(`Secret ${secretName} missing required fields (username, password)`);
+      // Allow cookie-based auth (OAuth vendors) - cookies can substitute for username/password
+      const hasCredentials = credentials.username && credentials.password;
+      const hasCookies = credentials.cookies && credentials.cookies.length > 0;
+
+      if (!hasCredentials && !hasCookies) {
+        throw new Error(`Secret ${secretName} missing required fields (username/password or cookies)`);
       }
 
       // Cache the credentials

@@ -1,6 +1,12 @@
-import puppeteer, { Browser, Page } from 'puppeteer-core';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Browser, Page } from 'puppeteer-core';
+
+// Add stealth plugin to hide automation indicators from Cloudflare
+puppeteer.use(StealthPlugin());
 import ora from 'ora';
 import { IBJCollector } from './ibj';
+import { CanvaCollector } from './canva';
 import { Uploader } from './uploader';
 import { OtpService } from './otp';
 
@@ -85,7 +91,7 @@ export class Collector {
   }
 
   private validateOptions(): void {
-    const supportedVendors = ['ibj'];
+    const supportedVendors = ['ibj', 'canva'];
 
     if (!supportedVendors.includes(this.options.vendorKey.toLowerCase())) {
       throw new Error(`Unsupported vendor: ${this.options.vendorKey}. Supported: ${supportedVendors.join(', ')}`);
@@ -114,27 +120,30 @@ export class Collector {
     const chromePath = this.findChromePath();
     console.log(`Using Chrome at: ${chromePath}`);
 
+    // Launch with stealth-friendly options
+    // The stealth plugin handles user agent, webdriver flag, etc.
     this.browser = await puppeteer.launch({
       executablePath: chromePath,
       headless: this.options.headless,
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
         '--window-size=1280,720',
+        '--start-maximized',
       ],
       defaultViewport: {
         width: 1280,
         height: 670,
       },
+      ignoreDefaultArgs: ['--enable-automation'],
     });
 
+    if (!this.browser) {
+      throw new Error('Failed to launch browser');
+    }
     this.page = await this.browser.newPage();
-
-    // Set user agent to look more like a real browser
-    await this.page.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    // User agent is handled by stealth plugin - no manual override needed
   }
 
   private findChromePath(): string {
@@ -172,6 +181,10 @@ export class Collector {
       case 'ibj':
         const ibjCollector = new IBJCollector(this.page, new OtpService());
         return await ibjCollector.collect(targetMonth);
+
+      case 'canva':
+        const canvaCollector = new CanvaCollector(this.page);
+        return await canvaCollector.collect(targetMonth);
 
       default:
         throw new Error(`Vendor ${vendorKey} not implemented`);

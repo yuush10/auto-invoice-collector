@@ -119,7 +119,7 @@ export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
   'aitemasu': { day: 1, hour: 8, enabled: true },
   'google-ads': { day: 4, hour: 8, enabled: true },
   'ibj': { day: 11, hour: 8, enabled: true, requiresManualTrigger: true },
-  'canva': { day: 11, hour: 9, enabled: true },
+  'canva': { day: 11, hour: 9, enabled: true, requiresManualTrigger: true },
 };
 
 /**
