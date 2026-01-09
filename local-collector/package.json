@@ -23,7 +23,7 @@
     "commander": "^11.1.0",
     "googleapis": "^128.0.0",
     "ora": "^5.4.1",
-    "puppeteer": "^21.6.1",
+    "puppeteer-core": "^21.6.1",
     "readline-sync": "^1.4.10"
   },
   "devDependencies": {

@@ -9,7 +9,7 @@
  * 4. Navigates to invoice download page
  * 5. Downloads PDF for target month
  */
-import { Page } from 'puppeteer';
+import { Page } from 'puppeteer-core';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
