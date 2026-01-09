@@ -15,7 +15,7 @@ import * as os from 'os';
 import { CollectionResult, DownloadedFile } from './collector';
 
 const LOGIN_URL = 'https://www.canva.com/login';
-const BILLING_URL = 'https://www.canva.com/settings/billing';
+const PURCHASE_HISTORY_URL = 'https://www.canva.com/settings/purchase-history';
 
 /**
  * Canva Collector for local browser automation
@@ -60,11 +60,11 @@ export class CanvaCollector {
 
       console.log('[Canva] Login successful!');
 
-      // Step 3: Navigate to billing page
-      await this.navigateToBilling();
+      // Step 3: Navigate to purchase history page
+      await this.navigateToPurchaseHistory();
 
-      // Step 4: Download invoice
-      const files = await this.downloadInvoice(targetMonth);
+      // Step 4: Download invoice via "More actions" menu
+      const files = await this.downloadInvoiceViaMenu(targetMonth);
 
       if (files.length === 0) {
         return {
@@ -118,120 +118,32 @@ export class CanvaCollector {
   }
 
   /**
-   * Navigate to billing page
+   * Navigate to purchase history page
    */
-  private async navigateToBilling(): Promise<void> {
-    console.log('[Canva] Navigating to billing page...');
+  private async navigateToPurchaseHistory(): Promise<void> {
+    console.log('[Canva] Navigating to purchase history page...');
 
-    await this.page.goto(BILLING_URL, { waitUntil: 'networkidle2' });
+    await this.page.goto(PURCHASE_HISTORY_URL, { waitUntil: 'networkidle2' });
     await this.wait(3000);
 
-    console.log('[Canva] On billing page');
+    console.log('[Canva] On purchase history page');
 
     // Take screenshot for debugging
-    const screenshotPath = path.join(os.tmpdir(), 'canva-billing.png');
+    const screenshotPath = path.join(os.tmpdir(), 'canva-purchase-history.png');
     await this.page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`[Canva] Screenshot saved to: ${screenshotPath}`);
   }
 
   /**
-   * Download invoice for target month
+   * Download invoice via "More actions" dropdown menu
+   * Flow:
+   * 1. Find the "More actions" button (three-dot menu) for the latest invoice
+   * 2. Click to open the dropdown
+   * 3. Select "Download invoice" from the menu
    */
-  private async downloadInvoice(targetMonth: string): Promise<DownloadedFile[]> {
+  private async downloadInvoiceViaMenu(targetMonth: string): Promise<DownloadedFile[]> {
     console.log(`[Canva] Looking for invoices for ${targetMonth}...`);
     const files: DownloadedFile[] = [];
-
-    // Strategy 1: Look for "Download invoice" or "View receipt" buttons/links
-    const downloadButtons = await this.findDownloadElements();
-
-    if (downloadButtons.length > 0) {
-      console.log(`[Canva] Found ${downloadButtons.length} download element(s)`);
-
-      for (const buttonInfo of downloadButtons) {
-        try {
-          const file = await this.captureDownload(buttonInfo.selector, targetMonth);
-          if (file) {
-            files.push(file);
-            console.log(`[Canva] Downloaded: ${file.filename}`);
-            break; // Just download the first one for now
-          }
-        } catch (error) {
-          console.log(`[Canva] Download attempt failed: ${(error as Error).message}`);
-        }
-      }
-    }
-
-    // Strategy 2: Look for direct PDF links
-    if (files.length === 0) {
-      console.log('[Canva] Looking for direct PDF links...');
-      const pdfLinks = await this.page.$$('a[href*=".pdf"], a[download]');
-
-      for (const link of pdfLinks) {
-        try {
-          const file = await this.captureDownloadFromLink(link, targetMonth);
-          if (file) {
-            files.push(file);
-            console.log(`[Canva] Downloaded: ${file.filename}`);
-            break;
-          }
-        } catch (error) {
-          console.log(`[Canva] PDF link download failed: ${(error as Error).message}`);
-        }
-      }
-    }
-
-    // Strategy 3: Capture page as PDF (fallback)
-    if (files.length === 0) {
-      console.log('[Canva] No downloadable invoices found, capturing page as PDF...');
-      const pagePdf = await this.capturePageAsPdf(targetMonth);
-      if (pagePdf) {
-        files.push(pagePdf);
-        console.log(`[Canva] Captured page: ${pagePdf.filename}`);
-      }
-    }
-
-    return files;
-  }
-
-  /**
-   * Find download elements on the page
-   */
-  private async findDownloadElements(): Promise<Array<{ selector: string; text: string }>> {
-    const elements: Array<{ selector: string; text: string }> = [];
-
-    const buttons = await this.page.evaluate(() => {
-      const downloadKeywords = ['download invoice', 'download receipt', 'view invoice', 'view receipt', 'download'];
-      const results: Array<{ index: number; text: string; tag: string }> = [];
-
-      const allElements = document.querySelectorAll('button, a');
-      allElements.forEach((el, index) => {
-        const text = (el.textContent || '').toLowerCase().trim();
-        if (downloadKeywords.some((keyword) => text.includes(keyword))) {
-          results.push({
-            index,
-            text: (el.textContent || '').trim().substring(0, 50),
-            tag: el.tagName.toLowerCase(),
-          });
-        }
-      });
-
-      return results;
-    });
-
-    for (const button of buttons) {
-      elements.push({
-        selector: `${button.tag}:nth-of-type(${button.index + 1})`,
-        text: button.text,
-      });
-    }
-
-    return elements;
-  }
-
-  /**
-   * Capture download by clicking an element
-   */
-  private async captureDownload(selector: string, targetMonth: string): Promise<DownloadedFile | null> {
     const downloadDir = path.join(os.tmpdir(), `canva-download-${Date.now()}`);
     fs.mkdirSync(downloadDir, { recursive: true });
 
@@ -243,61 +155,140 @@ export class CanvaCollector {
         downloadPath: downloadDir,
       });
 
-      // Find and click the download element by text
-      const clicked = await this.page.evaluate(() => {
-        const downloadKeywords = ['download invoice', 'download receipt', 'view invoice'];
-        const allElements = document.querySelectorAll('button, a');
+      // Step 1: Find and click the "More actions" button (first one = latest invoice)
+      console.log('[Canva] Looking for "More actions" button...');
 
-        for (const el of allElements) {
-          const text = (el.textContent || '').toLowerCase();
-          if (downloadKeywords.some((keyword) => text.includes(keyword))) {
-            (el as HTMLElement).click();
-            return true;
-          }
+      const moreActionsClicked = await this.page.evaluate(() => {
+        // Find button with aria-label="More actions"
+        const moreActionsButton = document.querySelector('button[aria-label="More actions"]');
+        if (moreActionsButton) {
+          (moreActionsButton as HTMLElement).click();
+          return true;
         }
         return false;
       });
 
-      if (!clicked) {
-        return null;
-      }
-
-      // Wait for file to appear
-      const file = await this.waitForDownload(downloadDir, targetMonth);
-      return file;
-    } finally {
-      // Clean up temp directory
-      try {
-        if (fs.existsSync(downloadDir)) {
-          fs.rmSync(downloadDir, { recursive: true, force: true });
+      if (!moreActionsClicked) {
+        console.log('[Canva] "More actions" button not found');
+        // Fallback to page capture
+        const pagePdf = await this.capturePageAsPdf(targetMonth);
+        if (pagePdf) {
+          files.push(pagePdf);
         }
-      } catch {
-        // Ignore cleanup errors
+        return files;
       }
-    }
-  }
 
-  /**
-   * Capture download from a link element
-   */
-  private async captureDownloadFromLink(link: any, targetMonth: string): Promise<DownloadedFile | null> {
-    const downloadDir = path.join(os.tmpdir(), `canva-download-${Date.now()}`);
-    fs.mkdirSync(downloadDir, { recursive: true });
+      console.log('[Canva] Clicked "More actions" button, waiting for menu...');
 
-    try {
-      // Configure CDP for download
-      const client = await this.page.createCDPSession();
-      await client.send('Page.setDownloadBehavior', {
-        behavior: 'allow',
-        downloadPath: downloadDir,
+      // Wait for menu to appear
+      try {
+        await this.page.waitForSelector('[role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]', { timeout: 5000 });
+        console.log('[Canva] Menu container appeared');
+      } catch {
+        console.log('[Canva] Menu selector not found, continuing anyway...');
+      }
+      await this.wait(1500);
+
+      // Take screenshot after menu opens
+      const menuScreenshot = path.join(os.tmpdir(), 'canva-menu-open.png');
+      await this.page.screenshot({ path: menuScreenshot, fullPage: true });
+      console.log(`[Canva] Menu screenshot saved to: ${menuScreenshot}`);
+
+      // Step 2: Click "Download invoice" in the dropdown menu
+      console.log('[Canva] Looking for "Download invoice" menu item...');
+
+      // Debug: Find all short text elements that might be menu items
+      const menuItems = await this.page.evaluate(() => {
+        const items: string[] = [];
+        // Look at all text-containing elements
+        document.querySelectorAll('p, span, button, [role="menuitem"]').forEach((el) => {
+          const text = (el.textContent || '').trim();
+          // Only show short text items (likely menu items)
+          if (text && text.length > 0 && text.length < 30 && !text.includes('\n')) {
+            items.push(`${el.tagName}: "${text}"`);
+          }
+        });
+        return items;
       });
+      console.log('[Canva] Short text elements:', menuItems.slice(0, 30));
 
-      // Click the link
-      await link.click();
+      // Try to click "Download invoice" - use page.click with text selector
+      let downloadClicked = false;
+      try {
+        // Try using XPath to find exact text
+        const downloadButtons = await this.page.$x("//p[normalize-space(text())='Download invoice'] | //span[normalize-space(text())='Download invoice'] | //*[normalize-space(text())='Download invoice']");
+        if (downloadButtons.length > 0) {
+          await (downloadButtons[0] as any).click();
+          downloadClicked = true;
+          console.log('[Canva] Clicked "Download invoice" via XPath');
+        }
+      } catch (e) {
+        console.log('[Canva] XPath click failed:', (e as Error).message);
+      }
 
-      // Wait for file to appear
+      // Fallback: evaluate click
+      if (!downloadClicked) {
+        downloadClicked = await this.page.evaluate(() => {
+          // Search all elements for exact "Download invoice" text
+          const all = document.querySelectorAll('*');
+          for (const el of all) {
+            // Check direct text content (not including children)
+            const directText = Array.from(el.childNodes)
+              .filter(node => node.nodeType === Node.TEXT_NODE)
+              .map(node => node.textContent?.trim())
+              .join('');
+
+            if (directText.toLowerCase() === 'download invoice') {
+              (el as HTMLElement).click();
+              return true;
+            }
+
+            // Also check full text content for leaf nodes
+            if (el.children.length === 0) {
+              const text = (el.textContent || '').trim().toLowerCase();
+              if (text === 'download invoice') {
+                (el as HTMLElement).click();
+                return true;
+              }
+            }
+          }
+          return false;
+        });
+      }
+
+      if (!downloadClicked) {
+        console.log('[Canva] "Download invoice" menu item not found');
+        // Fallback to page capture
+        const pagePdf = await this.capturePageAsPdf(targetMonth);
+        if (pagePdf) {
+          files.push(pagePdf);
+        }
+        return files;
+      }
+
+      console.log('[Canva] Clicked "Download invoice", waiting for download...');
+
+      // Wait for download to initiate
+      await this.wait(5000);
+
+      // Log download directory contents
+      const initialFiles = fs.readdirSync(downloadDir);
+      console.log(`[Canva] Files in download dir after click: ${initialFiles.join(', ') || '(none)'}`);
+
+      // Step 3: Wait for download to complete
       const file = await this.waitForDownload(downloadDir, targetMonth);
-      return file;
+      if (file) {
+        files.push(file);
+        console.log(`[Canva] Downloaded: ${file.filename}`);
+      } else {
+        console.log('[Canva] Download did not complete, capturing page as fallback...');
+        const pagePdf = await this.capturePageAsPdf(targetMonth);
+        if (pagePdf) {
+          files.push(pagePdf);
+        }
+      }
+
+      return files;
     } finally {
       // Clean up temp directory
       try {
