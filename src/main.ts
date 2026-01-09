@@ -5,7 +5,8 @@
  * It contains the trigger functions that are called by GAS.
  */
 
-import { Config, SERVICES } from './config';
+import { Config, SERVICES, VENDOR_SCHEDULE, VENDOR_CONFIGS } from './config';
+import { getPendingVendorQueueManager } from './modules/vendors/PendingVendorQueueManager';
 import { GmailSearcher } from './modules/gmail/GmailSearcher';
 import { AttachmentExtractor } from './modules/gmail/AttachmentExtractor';
 import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
@@ -31,11 +32,23 @@ import { PromptType } from './types/prompt';
  * Main function that processes new invoices from Gmail
  * This function is called by the time-based trigger
  *
- * Note: GAS trigger handlers should be synchronous. The internal async work
- * is handled by mainAsync() which is awaited properly.
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
  */
 function main(): void {
-  mainAsync();
+  mainAsync().catch(error => {
+    AppLogger.error('Unhandled error in main processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'System',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
 }
 
 /**
@@ -237,6 +250,8 @@ class InvoiceProcessor {
 
     AppLogger.info(`Processing ${attachments.length} attachments from message ${messageId}`);
 
+    let successCount = 0;
+
     attachments.forEach((attachment, index) => {
       try {
         // Calculate hash for duplicate detection
@@ -314,6 +329,7 @@ class InvoiceProcessor {
         }
 
         AppLogger.info(`Successfully processed attachment ${index}: ${fileName}`);
+        successCount++;
       } catch (error) {
         AppLogger.error(`Error processing attachment ${index} from message ${messageId}`, error as Error);
 
@@ -340,8 +356,13 @@ class InvoiceProcessor {
       }
     });
 
-    // Mark message as processed
-    this.gmailSearcher.markAsProcessed(message);
+    // Only mark as processed if at least one attachment succeeded
+    // This allows retry on next run if all attachments failed (e.g., transient server errors)
+    if (successCount > 0) {
+      this.gmailSearcher.markAsProcessed(message);
+    } else {
+      AppLogger.warn(`No attachments successfully processed for message ${messageId}, not marking as processed for retry`);
+    }
   }
 
   /**
@@ -599,11 +620,23 @@ function setupMonthlyJournalTrigger(): void {
  * Monthly journal processing trigger handler
  * This function is called by the monthly time-based trigger
  *
- * Note: GAS trigger handlers should be synchronous. The internal async work
- * is handled by processMonthlyJournalsAsync() which is awaited properly.
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
  */
 function processMonthlyJournals(): void {
-  processMonthlyJournalsAsync();
+  processMonthlyJournalsAsync().catch(error => {
+    AppLogger.error('Unhandled error in monthly journal processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'MonthlyJournals',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
 }
 
 /**
@@ -661,6 +694,45 @@ function doGet(
 
   return output;
 }
+
+/**
+ * Web App POST handler - handles local collector uploads
+ */
+function doPost(
+  e: GoogleAppsScript.Events.DoPost
+): GoogleAppsScript.Content.TextOutput {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const { action, token, vendorKey, targetMonth, file } = data;
+
+    AppLogger.info(`[doPost] Received action: ${action}`);
+
+    let result: { success: boolean; message?: string; fileId?: string; error?: string };
+
+    switch (action) {
+      case 'uploadInvoice':
+        result = getWebAppApi().uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+        break;
+
+      case 'markVendorComplete':
+        result = getWebAppApi().markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+        break;
+
+      default:
+        result = { success: false, error: `Unknown action: ${action}` };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    AppLogger.error('[doPost] Error processing request', error as Error);
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: false, error: (error as Error).message })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+(globalThis as any).doPost = doPost;
 
 /**
  * Include HTML file content (for templates)
@@ -911,8 +983,179 @@ function api_resetToDefaultPrompt(promptType: string): string {
 }
 
 // ============================================
+// Pending Vendor APIs (Phase 3.6)
+// ============================================
+
+function api_getPendingVendors(): string {
+  try {
+    const result = getWebAppApi().getPendingVendors();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getAllPendingVendorRecords(): string {
+  try {
+    const result = getWebAppApi().getAllPendingVendorRecords();
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_getPendingVendorById(id: string): string {
+  try {
+    const result = getWebAppApi().getPendingVendorById(id);
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_startVendorProcessing(id: string): string {
+  try {
+    const result = getWebAppApi().startVendorProcessing(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_completePendingVendor(id: string): string {
+  try {
+    const result = getWebAppApi().completePendingVendor(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_failPendingVendor(id: string, errorMessage: string): string {
+  try {
+    const result = getWebAppApi().failPendingVendor(id, errorMessage);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export pending vendor API functions
+(globalThis as any).api_getPendingVendors = api_getPendingVendors;
+(globalThis as any).api_getAllPendingVendorRecords = api_getAllPendingVendorRecords;
+(globalThis as any).api_getPendingVendorById = api_getPendingVendorById;
+(globalThis as any).api_startVendorProcessing = api_startVendorProcessing;
+(globalThis as any).api_completePendingVendor = api_completePendingVendor;
+(globalThis as any).api_failPendingVendor = api_failPendingVendor;
+
+// ============================================
+// Local Collector APIs (Phase 3.6 - Local Browser Automation)
+// ============================================
+
+function api_getLocalCollectorCommand(id: string): string {
+  try {
+    const result = getWebAppApi().getLocalCollectorCommand(id);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_uploadFromLocalCollector(
+  token: string,
+  vendorKey: string,
+  targetMonth: string,
+  fileJson: string
+): string {
+  try {
+    const file = JSON.parse(fileJson);
+    const result = getWebAppApi().uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+function api_markVendorCompleteFromLocal(
+  token: string,
+  vendorKey: string,
+  targetMonth: string
+): string {
+  try {
+    const result = getWebAppApi().markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+    return JSON.stringify(result);
+  } catch (error) {
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
+
+// Export local collector API functions
+(globalThis as any).api_getLocalCollectorCommand = api_getLocalCollectorCommand;
+(globalThis as any).api_uploadFromLocalCollector = api_uploadFromLocalCollector;
+(globalThis as any).api_markVendorCompleteFromLocal = api_markVendorCompleteFromLocal;
+
+/**
+ * Test function to get local collector command for IBJ
+ * This will:
+ * 1. Queue IBJ for manual processing (creates pending record)
+ * 2. Get the local collector command with token
+ * Run this from Apps Script editor to get a token for testing
+ */
+function testGetLocalCollectorCommand(): void {
+  // First, queue IBJ for manual processing
+  Logger.log('=== Queueing IBJ for Manual Processing ===');
+
+  const queueManager = getPendingVendorQueueManager();
+  const scheduledDate = new Date();
+  const record = queueManager.addPendingVendor('ibj', scheduledDate);
+
+  Logger.log('Created pending record: ' + record.id);
+
+  Logger.log('');
+  Logger.log('=== Getting Local Collector Command ===');
+  const result = getWebAppApi().getLocalCollectorCommand(record.id);
+  Logger.log(JSON.stringify(result, null, 2));
+
+  if (result.success && result.command) {
+    Logger.log('');
+    Logger.log('Copy this command to run in terminal:');
+    Logger.log(result.command);
+  }
+}
+
+(globalThis as any).testGetLocalCollectorCommand = testGetLocalCollectorCommand;
+
+// ============================================
 // Test Data Generation (Development Only)
 // ============================================
+
+// Vendor Invoice Processing (Phase 3)
+import { processVendorInvoices as processVendorInvoicesImpl, ProcessResult as VendorProcessResult } from './modules/vendors/VendorInvoiceProcessor';
+import { DownloadOptions as VendorDownloadOptions } from './modules/vendors/VendorClient';
+import { getCookieExpirationTracker } from './modules/vendors/CookieExpirationTracker';
+import { VendorAuthNotification, getRecoveryInstructions } from './types/vendor';
+
+/**
+ * Process vendor invoices: download from Cloud Run and upload to Google Drive
+ * @param vendorKey Vendor identifier (e.g., 'aitemasu', 'ibj', 'google-ads')
+ * @param optionsJson Optional download options as JSON string
+ * @returns Processing result as JSON string
+ */
+function downloadVendorInvoices(vendorKey: string, optionsJson?: string): string {
+  try {
+    AppLogger.info(`[Main] Processing vendor invoices for ${vendorKey}`);
+
+    const options = optionsJson ? JSON.parse(optionsJson) as VendorDownloadOptions : undefined;
+    const result = processVendorInvoicesImpl(vendorKey, options);
+
+    AppLogger.info(`[Main] Vendor processing complete: ${result.filesUploaded.length} files uploaded`);
+
+    return JSON.stringify({ success: true, data: result });
+  } catch (error) {
+    AppLogger.error(`[Main] Vendor processing failed for ${vendorKey}`, error as Error);
+    return JSON.stringify({ success: false, error: (error as Error).message });
+  }
+}
 
 import { DraftSheetManager } from './modules/journal/DraftSheetManager';
 import { SuggestedEntries } from './types/journal';
@@ -1397,6 +1640,445 @@ function clearTestDraftData(): void {
 // Test data functions
 (globalThis as any).createTestDraftData = createTestDraftData;
 (globalThis as any).clearTestDraftData = clearTestDraftData;
+
+// Vendor invoice functions (Phase 3)
+(globalThis as any).downloadVendorInvoices = downloadVendorInvoices;
+
+/**
+ * Test function to download Aitemasu invoices
+ * Run this from GAS editor dropdown
+ */
+function downloadAitemasuInvoices(): void {
+  const result = downloadVendorInvoices('aitemasu');
+  Logger.log(result);
+}
+(globalThis as any).downloadAitemasuInvoices = downloadAitemasuInvoices;
+
+/**
+ * Process vendors scheduled for today
+ * This is called by the daily trigger at 8:00 AM JST
+ * Checks VENDOR_SCHEDULE to determine which vendors to process
+ *
+ * Note: GAS trigger handlers must be synchronous. We use .catch() to ensure
+ * any unhandled promise rejections are logged and notified.
+ */
+
+/**
+ * Queue a vendor for manual processing
+ * Called when a vendor has requiresManualTrigger=true
+ * Stores pending task in sheet and sends notification email
+ */
+function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date): void {
+  const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+  const vendorName = vendorConfig?.vendorName || vendorKey;
+
+  AppLogger.info(`[Vendor] Queuing ${vendorKey} for manual processing`);
+
+  // Store in PendingVendorQueueManager sheet
+  const queueManager = getPendingVendorQueueManager();
+  const record = queueManager.addPendingVendor(vendorKey, scheduledDate);
+  AppLogger.info(`[Vendor] Created pending record: ${record.id}`);
+
+  // Send notification email about pending vendor
+  try {
+    const dateStr = scheduledDate.toLocaleDateString('ja-JP', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Tokyo'
+    });
+    const timeStr = scheduledDate.toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Tokyo'
+    });
+
+    // TODO: Phase 4 - Replace with VNC link
+    const webAppUrl = ScriptApp.getService().getUrl();
+
+    const subject = `[Auto Invoice Collector] ${vendorName} 請求書処理待機中`;
+    const body = `${vendorName}の請求書処理が待機中です。
+
+このベンダーはCAPTCHA認証が必要なため、自動処理ができません。
+手動で処理を開始してください。
+
+■ 詳細
+- ベンダー: ${vendorName}
+- 予定日時: ${dateStr} ${timeStr}
+- ステータス: 待機中
+
+■ 処理方法
+以下のリンクから処理を開始してください:
+${webAppUrl}
+
+処理を開始すると、ブラウザが表示されCAPTCHA認証を行えます。
+認証後は自動的にOTP処理と請求書ダウンロードが行われます。
+
+---
+Auto Invoice Collector`;
+
+    MailApp.sendEmail({
+      to: Config.getAdminEmail(),
+      subject,
+      body
+    });
+
+    AppLogger.info(`[Vendor] Sent pending notification for ${vendorKey}`);
+  } catch (error) {
+    AppLogger.error(`[Vendor] Failed to send pending notification for ${vendorKey}`, error as Error);
+    throw error;
+  }
+}
+(globalThis as any).queueVendorForManualProcessing = queueVendorForManualProcessing;
+
+function processScheduledVendors(): void {
+  processScheduledVendorsAsync().catch(error => {
+    AppLogger.error('Unhandled error in scheduled vendor processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([{
+        messageId: 'N/A',
+        serviceName: 'VendorScheduler',
+        error: `Unhandled error: ${error}`
+      }]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
+}
+
+async function processScheduledVendorsAsync(): Promise<void> {
+  const now = new Date();
+  const today = now.getDate();
+  const currentHour = now.getHours();
+
+  AppLogger.info(`[Vendor] Checking scheduled vendors for day ${today} at ${currentHour}:00`);
+
+  // Find vendors scheduled for today that are enabled
+  const scheduledVendors = Object.entries(VENDOR_SCHEDULE)
+    .filter(([_, schedule]) => schedule.day === today && schedule.enabled);
+
+  // Separate auto-process and manual-trigger vendors
+  const vendorsToProcess = scheduledVendors
+    .filter(([_, schedule]) => !schedule.requiresManualTrigger)
+    .map(([vendorKey, _]) => vendorKey);
+
+  const manualTriggerVendors = scheduledVendors
+    .filter(([_, schedule]) => schedule.requiresManualTrigger)
+    .map(([vendorKey, _]) => vendorKey);
+
+  if (vendorsToProcess.length === 0 && manualTriggerVendors.length === 0) {
+    AppLogger.info(`[Vendor] No vendors scheduled for day ${today}`);
+    Logger.log(`No vendors scheduled for day ${today}`);
+    return;
+  }
+
+  // Queue manual-trigger vendors for later processing
+  if (manualTriggerVendors.length > 0) {
+    AppLogger.info(`[Vendor] Manual-trigger vendors scheduled for day ${today}: ${manualTriggerVendors.join(', ')}`);
+    for (const vendorKey of manualTriggerVendors) {
+      try {
+        // Queue vendor for manual processing (implemented in Phase 2)
+        queueVendorForManualProcessing(vendorKey, now);
+        AppLogger.info(`[Vendor] Queued ${vendorKey} for manual processing`);
+      } catch (error) {
+        AppLogger.error(`[Vendor] Failed to queue ${vendorKey} for manual processing`, error as Error);
+      }
+    }
+  }
+
+  if (vendorsToProcess.length === 0) {
+    AppLogger.info(`[Vendor] No auto-process vendors scheduled for day ${today}`);
+    Logger.log(`No auto-process vendors scheduled for day ${today} (manual-trigger vendors queued)`);
+    return;
+  }
+
+  AppLogger.info(`[Vendor] Processing vendors scheduled for day ${today}: ${vendorsToProcess.join(', ')}`);
+
+  const results: Array<{ vendor: string; result: string; processResult?: VendorProcessResult }> = [];
+  const notifier = new Notifier(Config.getAdminEmail());
+  const cookieTracker = getCookieExpirationTracker();
+
+  for (const vendorKey of vendorsToProcess) {
+    try {
+      AppLogger.info(`[Vendor] Processing vendor: ${vendorKey}`);
+      const processResult = processVendorInvoicesImpl(vendorKey);
+
+      if (processResult.success) {
+        results.push({
+          vendor: vendorKey,
+          result: `Success: ${processResult.filesUploaded?.length || 0} files uploaded`,
+          processResult
+        });
+        // Record successful auth for cookie tracking
+        cookieTracker.recordSuccessfulAuth(vendorKey);
+      } else {
+        results.push({
+          vendor: vendorKey,
+          result: `Failed: ${processResult.errors.join(', ')}`,
+          processResult
+        });
+
+        // Send auth failure notification if applicable
+        if (processResult.vendorError?.isAuthFailure) {
+          const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+          const authNotification: VendorAuthNotification = {
+            vendorKey,
+            vendorName: vendorConfig?.vendorName || vendorKey,
+            failureType: processResult.vendorError.authFailure?.failureType || 'unknown',
+            errorMessage: processResult.vendorError.message,
+            screenshots: processResult.debug?.screenshots,
+            currentUrl: processResult.debug?.currentUrl,
+            failedAt: new Date(),
+            recoveryInstructions: processResult.vendorError.recoveryInstructions ||
+              getRecoveryInstructions(
+                processResult.vendorError.authFailure?.failureType || 'unknown',
+                vendorConfig?.vendorName || vendorKey
+              ),
+          };
+          notifier.sendVendorAuthFailureNotification(authNotification);
+          AppLogger.info(`[Vendor] Sent auth failure notification for ${vendorKey}`);
+        }
+      }
+    } catch (error) {
+      AppLogger.error(`[Vendor] Error processing ${vendorKey}`, error as Error);
+      results.push({
+        vendor: vendorKey,
+        result: `Error: ${(error as Error).message}`
+      });
+    }
+  }
+
+  // Check for cookie expiration warnings
+  try {
+    const vendorsNeedingWarning = cookieTracker.getVendorsNeedingWarning();
+    for (const status of vendorsNeedingWarning) {
+      const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === status.vendorKey);
+      if (vendorConfig && status.daysUntilExpiration !== undefined) {
+        notifier.sendCookieExpirationWarning(
+          status.vendorKey,
+          vendorConfig.vendorName,
+          status.daysUntilExpiration
+        );
+        cookieTracker.markWarningSent(status.vendorKey);
+        AppLogger.info(`[Vendor] Sent cookie expiration warning for ${status.vendorKey}`);
+      }
+    }
+  } catch (error) {
+    AppLogger.error('[Vendor] Error checking cookie expirations', error as Error);
+  }
+
+  // Log summary
+  AppLogger.info('[Vendor] Scheduled vendor processing complete');
+  for (const r of results) {
+    AppLogger.info(`[Vendor] ${r.vendor}: ${r.result}`);
+    Logger.log(`${r.vendor}: ${r.result}`);
+  }
+
+  // Send notification email with results
+  if (results.length > 0) {
+    try {
+      const summary = results.map(r => `• ${r.vendor}: ${r.result}`).join('\n');
+      MailApp.sendEmail({
+        to: Config.getAdminEmail(),
+        subject: `[Auto Invoice Collector] Vendor Invoice Processing - Day ${today}`,
+        body: `ベンダー請求書処理が完了しました。\n\n処理対象: ${vendorsToProcess.join(', ')}\n\n処理結果:\n${summary}`
+      });
+    } catch (error) {
+      AppLogger.error('[Vendor] Failed to send notification', error as Error);
+    }
+  }
+}
+(globalThis as any).processScheduledVendors = processScheduledVendors;
+(globalThis as any).processScheduledVendorsAsync = processScheduledVendorsAsync;
+
+/**
+ * Process a specific vendor manually (regardless of schedule)
+ * Useful for testing or manual intervention
+ * @param vendorKey Vendor identifier (e.g., 'aitemasu', 'ibj', 'google-ads')
+ */
+function processVendorManually(vendorKey: string): string {
+  AppLogger.info(`[Vendor] Manual processing requested for: ${vendorKey}`);
+
+  // Verify vendor exists in schedule
+  if (!VENDOR_SCHEDULE[vendorKey]) {
+    const message = `Unknown vendor: ${vendorKey}. Available vendors: ${Object.keys(VENDOR_SCHEDULE).join(', ')}`;
+    Logger.log(message);
+    return message;
+  }
+
+  try {
+    const processResult = processVendorInvoicesImpl(vendorKey);
+
+    if (processResult.success) {
+      const message = `Success: ${processResult.filesUploaded?.length || 0} files uploaded`;
+      Logger.log(`[${vendorKey}] ${message}`);
+      return message;
+    } else {
+      const message = `Failed: ${processResult.errors.join(', ')}`;
+      Logger.log(`[${vendorKey}] ${message}`);
+      return message;
+    }
+  } catch (error) {
+    const message = `Error: ${(error as Error).message}`;
+    AppLogger.error(`[Vendor] Manual processing failed for ${vendorKey}`, error as Error);
+    Logger.log(`[${vendorKey}] ${message}`);
+    return message;
+  }
+}
+(globalThis as any).processVendorManually = processVendorManually;
+
+/**
+ * Show current vendor schedule configuration
+ */
+function showVendorSchedule(): void {
+  Logger.log('=== Vendor Schedule Configuration ===');
+  Logger.log('');
+  for (const [vendorKey, schedule] of Object.entries(VENDOR_SCHEDULE)) {
+    const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+    const vendorName = vendorConfig?.vendorName || vendorKey;
+    const status = schedule.enabled ? '✓ Enabled' : '✗ Disabled';
+    Logger.log(`${vendorName} (${vendorKey}):`);
+    Logger.log(`  Day: ${schedule.day} of each month`);
+    Logger.log(`  Time: ${schedule.hour}:00 JST`);
+    Logger.log(`  Status: ${status}`);
+    Logger.log('');
+  }
+}
+(globalThis as any).showVendorSchedule = showVendorSchedule;
+
+/**
+ * Setup daily trigger for scheduled vendor invoice downloads
+ * Run this once to set up automatic daily vendor processing
+ * Runs daily at 8:00 AM JST and processes vendors based on VENDOR_SCHEDULE
+ *
+ * Schedule:
+ *   - Day 1: Aitemasu
+ *   - Day 4: Google Ads
+ *   - Day 11: IBJ
+ */
+function setupDailyVendorTrigger(): void {
+  // Remove existing triggers for vendor processing
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    const handlerFunction = trigger.getHandlerFunction();
+    if (handlerFunction === 'processScheduledVendors' ||
+        handlerFunction === 'processAllVendorInvoices') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new daily trigger at 8 AM
+  ScriptApp.newTrigger('processScheduledVendors')
+    .timeBased()
+    .everyDays(1)
+    .atHour(8)
+    .create();
+
+  Logger.log('Daily vendor trigger created successfully (8:00 AM JST)');
+  Logger.log('Schedule:');
+  for (const [vendorKey, schedule] of Object.entries(VENDOR_SCHEDULE)) {
+    if (schedule.enabled) {
+      Logger.log(`  Day ${schedule.day}: ${vendorKey}`);
+    }
+  }
+}
+(globalThis as any).setupDailyVendorTrigger = setupDailyVendorTrigger;
+
+/**
+ * @deprecated Use setupDailyVendorTrigger instead
+ * Kept for backward compatibility
+ */
+function setupMonthlyVendorTrigger(): void {
+  Logger.log('WARNING: setupMonthlyVendorTrigger is deprecated. Use setupDailyVendorTrigger instead.');
+  setupDailyVendorTrigger();
+}
+(globalThis as any).setupMonthlyVendorTrigger = setupMonthlyVendorTrigger;
+
+/**
+ * Check cookie status for all vendors
+ * Run this manually to see cookie expiration status
+ */
+function checkVendorCookieStatus(): void {
+  Logger.log('=== Vendor Cookie Status Check ===');
+  const cookieTracker = getCookieExpirationTracker();
+  const statuses = cookieTracker.checkAllCookieStatus();
+
+  for (const status of statuses) {
+    const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === status.vendorKey);
+    const vendorName = vendorConfig?.vendorName || status.vendorKey;
+    Logger.log(`\n${vendorName} (${status.vendorKey}):`);
+    Logger.log(`  Valid: ${status.isValid}`);
+    Logger.log(`  Days until expiration: ${status.daysUntilExpiration ?? 'unknown'}`);
+    Logger.log(`  Should warn: ${status.shouldWarn}`);
+    Logger.log(`  Status: ${status.statusMessage}`);
+  }
+}
+(globalThis as any).checkVendorCookieStatus = checkVendorCookieStatus;
+
+/**
+ * Update cookie metadata for a vendor after manual cookie refresh
+ * @param vendorKey Vendor identifier
+ * @param expirationDays Days until cookie expires (optional)
+ */
+function updateVendorCookieMetadata(vendorKey: string, expirationDays?: number): void {
+  const cookieTracker = getCookieExpirationTracker();
+  const expiresAt = expirationDays
+    ? new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000)
+    : undefined;
+
+  cookieTracker.recordCookieUpdate(vendorKey, expiresAt);
+  Logger.log(`Updated cookie metadata for ${vendorKey}`);
+  if (expiresAt) {
+    Logger.log(`  Expires: ${expiresAt.toISOString()}`);
+  }
+}
+(globalThis as any).updateVendorCookieMetadata = updateVendorCookieMetadata;
+
+/**
+ * Send test auth failure notification
+ * Useful for verifying notification format and delivery
+ */
+function testAuthFailureNotification(vendorKey: string): void {
+  const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
+  if (!vendorConfig) {
+    Logger.log(`Vendor not found: ${vendorKey}`);
+    return;
+  }
+
+  const notifier = new Notifier(Config.getAdminEmail());
+  const testNotification: VendorAuthNotification = {
+    vendorKey,
+    vendorName: vendorConfig.vendorName,
+    failureType: 'session_expired',
+    errorMessage: 'This is a test notification. Your session has expired.',
+    currentUrl: vendorConfig.portalUrl || `https://${vendorConfig.domainPatterns[0]}/`,
+    failedAt: new Date(),
+    recoveryInstructions: getRecoveryInstructions('session_expired', vendorConfig.vendorName),
+  };
+
+  notifier.sendVendorAuthFailureNotification(testNotification);
+  Logger.log(`Sent test auth failure notification for ${vendorKey} to ${Config.getAdminEmail()}`);
+}
+(globalThis as any).testAuthFailureNotification = testAuthFailureNotification;
+
+/**
+ * Test auth failure notification for Aitemasu vendor
+ * Run this from Apps Script editor to verify notification works
+ */
+function testAuthFailureNotification_Aitemasu(): void {
+  testAuthFailureNotification('aitemasu');
+}
+(globalThis as any).testAuthFailureNotification_Aitemasu = testAuthFailureNotification_Aitemasu;
+
+/**
+ * Update Aitemasu cookie metadata (30 day expiration)
+ * Run after manually refreshing cookies
+ */
+function updateCookie_Aitemasu_30days(): void {
+  updateVendorCookieMetadata('aitemasu', 30);
+}
+(globalThis as any).updateCookie_Aitemasu_30days = updateCookie_Aitemasu_30days;
 
 // Debug function to diagnose data issues
 function debugDraftData(): void {

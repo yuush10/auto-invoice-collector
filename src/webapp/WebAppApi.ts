@@ -10,6 +10,11 @@ import { DictionaryHistorySheetManager } from '../modules/journal/DictionaryHist
 import { PromptService } from '../modules/journal/PromptService';
 import { JournalGenerator } from '../modules/journal/JournalGenerator';
 import {
+  PendingVendorQueueManager,
+  getPendingVendorQueueManager,
+  PendingVendorRecord
+} from '../modules/vendors/PendingVendorQueueManager';
+import {
   DraftEntry,
   DraftStatus,
   JournalEntry,
@@ -22,6 +27,7 @@ import {
   DraftListItem,
   DraftDetail,
   DraftUpdate,
+  ApproveResult,
   BulkApproveResult,
   PromptConfigCreate,
   PromptConfigUpdate,
@@ -29,6 +35,48 @@ import {
   YearMonthOption
 } from './types';
 import { AppLogger } from '../utils/logger';
+
+/**
+ * List of fields allowed in DraftUpdate for sanitization.
+ * Protected fields (status, reviewedBy, reviewedAt, draftId, version, etc.)
+ * must be managed through dedicated methods to ensure proper audit trail
+ * tracking for 電子帳簿保存法 compliance.
+ */
+const ALLOWED_DRAFT_UPDATE_FIELDS = [
+  'vendorName',
+  'serviceName',
+  'amount',
+  'taxAmount',
+  'issueDate',
+  'dueDate',
+  'eventMonth',
+  'paymentMonth',
+  'selectedEntry',
+  'notes'
+] as const;
+
+/**
+ * Sanitize DraftUpdate object to only include allowed fields.
+ * This prevents injection of protected fields like status, reviewedBy, reviewedAt, etc.
+ * which must be managed through dedicated methods (updateStatus, selectSuggestion, etc.)
+ * to ensure proper audit trail tracking for 電子帳簿保存法 compliance.
+ *
+ * @param input - The raw input object (potentially containing unauthorized fields)
+ * @returns A sanitized DraftUpdate with only allowed fields
+ */
+export function sanitizeDraftUpdate(input: unknown): DraftUpdate {
+  if (typeof input !== 'object' || input === null) {
+    return {};
+  }
+
+  const sanitized: DraftUpdate = {};
+  for (const field of ALLOWED_DRAFT_UPDATE_FIELDS) {
+    if (field in input) {
+      (sanitized as Record<string, unknown>)[field] = (input as Record<string, unknown>)[field];
+    }
+  }
+  return sanitized;
+}
 
 /**
  * Configuration for WebAppApi
@@ -45,15 +93,15 @@ export class WebAppApi {
   private dictHistoryManager: DictionaryHistorySheetManager;
   private promptService: PromptService;
   private journalGenerator: JournalGenerator | null = null;
-  private config: WebAppApiConfig;
+  private _pendingQueueManager: PendingVendorQueueManager | null = null;
 
   constructor(config: WebAppApiConfig) {
-    this.config = config;
     this.draftManager = new DraftSheetManager(config.spreadsheetId);
     this.dictionaryManager = new DictionarySheetManager(config.spreadsheetId);
     this.draftHistoryManager = new DraftHistorySheetManager(config.spreadsheetId);
     this.dictHistoryManager = new DictionaryHistorySheetManager(config.spreadsheetId);
     this.promptService = new PromptService({ spreadsheetId: config.spreadsheetId });
+    // Note: pendingQueueManager is lazy-loaded to avoid issues in test environments
 
     if (config.geminiApiKey) {
       this.journalGenerator = new JournalGenerator({
@@ -61,6 +109,16 @@ export class WebAppApi {
         spreadsheetId: config.spreadsheetId
       });
     }
+  }
+
+  /**
+   * Get the pending queue manager (lazy-loaded)
+   */
+  private get pendingQueueManager(): PendingVendorQueueManager {
+    if (!this._pendingQueueManager) {
+      this._pendingQueueManager = getPendingVendorQueueManager();
+    }
+    return this._pendingQueueManager;
   }
 
   // ============================================
@@ -257,7 +315,8 @@ export class WebAppApi {
   updateDraft(draftId: string, updates: DraftUpdate, reason?: string): DraftDetail | null {
     try {
       const user = this.getCurrentUser();
-      const updated = this.draftManager.update(draftId, updates, reason, user);
+      const sanitizedUpdates = sanitizeDraftUpdate(updates);
+      const updated = this.draftManager.update(draftId, sanitizedUpdates, reason, user);
       if (!updated) {
         return null;
       }
@@ -340,9 +399,10 @@ export class WebAppApi {
     selectedEntry: JournalEntry[],
     registerToDict: boolean,
     editReason?: string
-  ): DraftDetail | null {
+  ): ApproveResult | null {
     try {
       const user = this.getCurrentUser();
+      const warnings: string[] = [];
 
       // Update selected entry if provided
       if (selectedEntry && selectedEntry.length > 0) {
@@ -361,11 +421,18 @@ export class WebAppApi {
       }
 
       // Register to dictionary if requested
-      if (registerToDict && this.journalGenerator) {
-        this.journalGenerator.learnFromDraft(draftId, user);
+      if (registerToDict) {
+        if (this.journalGenerator) {
+          this.journalGenerator.learnFromDraft(draftId, user);
+        } else {
+          warnings.push('Dictionary registration was skipped: Gemini API key not configured');
+        }
       }
 
-      return this.toDraftDetail(approved);
+      return {
+        draft: this.toDraftDetail(approved),
+        warnings: warnings.length > 0 ? warnings : undefined
+      };
     } catch (error) {
       AppLogger.error('Error approving draft', error as Error);
       throw error;
@@ -482,7 +549,7 @@ export class WebAppApi {
         existing.promptType,
         updates.promptText || existing.promptText,
         user,
-        updates.notes
+        updates.notes ?? existing.notes
       );
     } catch (error) {
       AppLogger.error('Error updating prompt', error as Error);
@@ -709,6 +776,346 @@ export class WebAppApi {
       };
     } catch {
       return {};
+    }
+  }
+
+  // ============================================
+  // Pending Vendor APIs
+  // ============================================
+
+  /**
+   * Response type for pending vendor list
+   */
+  getPendingVendors(): PendingVendorRecord[] {
+    try {
+      return this.pendingQueueManager.getPendingVendors();
+    } catch (error) {
+      AppLogger.error('Error getting pending vendors', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all pending vendor records (including completed/failed)
+   */
+  getAllPendingVendorRecords(): PendingVendorRecord[] {
+    try {
+      return this.pendingQueueManager.getAllRecords();
+    } catch (error) {
+      AppLogger.error('Error getting all pending vendor records', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific pending vendor record by ID
+   */
+  getPendingVendorById(id: string): PendingVendorRecord | null {
+    try {
+      return this.pendingQueueManager.getRecordById(id);
+    } catch (error) {
+      AppLogger.error('Error getting pending vendor by ID', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start processing a pending vendor
+   * Returns the session URL for VNC access
+   */
+  startVendorProcessing(id: string): { success: boolean; sessionUrl?: string; error?: string } {
+    try {
+      const record = this.pendingQueueManager.getRecordById(id);
+      if (!record) {
+        return { success: false, error: 'Pending vendor record not found' };
+      }
+
+      if (record.status !== 'pending') {
+        return { success: false, error: `Cannot start processing: status is ${record.status}` };
+      }
+
+      // TODO: Phase 4 - Generate VNC session URL from Cloud Run
+      // For now, return a placeholder URL
+      const sessionUrl = this.generateInteractiveSessionUrl(record);
+
+      // Update status to processing
+      this.pendingQueueManager.startProcessing(id, sessionUrl);
+
+      AppLogger.info(`[WebAppApi] Started vendor processing: ${id}, session: ${sessionUrl}`);
+
+      return { success: true, sessionUrl };
+    } catch (error) {
+      AppLogger.error('Error starting vendor processing', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark a pending vendor as completed
+   */
+  completePendingVendor(id: string): { success: boolean; error?: string } {
+    try {
+      this.pendingQueueManager.markCompleted(id);
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error completing pending vendor', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark a pending vendor as failed
+   */
+  failPendingVendor(id: string, errorMessage: string): { success: boolean; error?: string } {
+    try {
+      this.pendingQueueManager.markFailed(id, errorMessage);
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error failing pending vendor', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Generate interactive session URL for VNC access
+   * TODO: Phase 4 - This will call Cloud Run /interactive endpoint
+   */
+  private generateInteractiveSessionUrl(record: PendingVendorRecord): string {
+    // Placeholder implementation
+    // In Phase 4, this will call Cloud Run and return the noVNC URL
+    const cloudRunUrl = this.getCloudRunUrl();
+    const token = this.generateSessionToken();
+    return `${cloudRunUrl}/interactive?vendor=${record.vendorKey}&token=${token}&recordId=${record.id}`;
+  }
+
+  /**
+   * Get Cloud Run URL from config
+   */
+  private getCloudRunUrl(): string {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      return props.getProperty('VENDOR_CLOUD_RUN_URL') || 'https://vendor-automation.run.app';
+    } catch {
+      return 'https://vendor-automation.run.app';
+    }
+  }
+
+  /**
+   * Generate a temporary session token
+   */
+  private generateSessionToken(): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 10);
+    return `${timestamp}-${random}`;
+  }
+
+  // ============================================
+  // Local Collector APIs
+  // ============================================
+
+  /**
+   * Generate local collector command for a pending vendor
+   * Returns a command string that the user can copy and run on their Mac
+   */
+  getLocalCollectorCommand(id: string): { success: boolean; command?: string; error?: string } {
+    try {
+      const record = this.pendingQueueManager.getRecordById(id);
+      if (!record) {
+        return { success: false, error: 'Pending vendor record not found' };
+      }
+
+      // Calculate target month from scheduled date (default to previous month)
+      const targetMonth = this.calculateTargetMonth(record.scheduledDate);
+
+      // Generate one-time token
+      const token = this.generateLocalCollectorToken(record.id);
+
+      // Build the command
+      const command = `npx @auto-invoice/local-collector collect --vendor=${record.vendorKey} --target-month=${targetMonth} --token=${token}`;
+
+      AppLogger.info(`[WebAppApi] Generated local collector command for: ${id}`);
+
+      return { success: true, command };
+    } catch (error) {
+      AppLogger.error('Error generating local collector command', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Calculate target month from scheduled date
+   * Invoices are typically for the previous month
+   */
+  private calculateTargetMonth(scheduledDate: Date): string {
+    const date = new Date(scheduledDate);
+    // Go to previous month
+    date.setMonth(date.getMonth() - 1);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  }
+
+  /**
+   * Upload file from local collector
+   * Called by the local collector after successful download
+   */
+  uploadFromLocalCollector(
+    token: string,
+    _vendorKey: string,
+    targetMonth: string,
+    file: { filename: string; data: string; mimeType: string }
+  ): { success: boolean; fileId?: string; error?: string } {
+    try {
+      // Validate token
+      if (!this.validateLocalCollectorToken(token)) {
+        return { success: false, error: 'Invalid or expired token' };
+      }
+
+      // Decode base64 file data
+      const fileData = Utilities.base64Decode(file.data);
+      const blob = Utilities.newBlob(fileData, file.mimeType, file.filename);
+
+      // Get target folder (by year-month)
+      const folder = this.getOrCreateInvoiceFolder(targetMonth);
+
+      // Upload file
+      const uploadedFile = folder.createFile(blob);
+      const fileId = uploadedFile.getId();
+
+      AppLogger.info(`[WebAppApi] Uploaded file from local collector: ${file.filename} -> ${fileId}`);
+
+      return { success: true, fileId };
+    } catch (error) {
+      AppLogger.error('Error uploading from local collector', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mark vendor complete from local collector
+   */
+  markVendorCompleteFromLocal(
+    token: string,
+    vendorKey: string,
+    targetMonth: string
+  ): { success: boolean; error?: string } {
+    try {
+      // Validate token
+      if (!this.validateLocalCollectorToken(token)) {
+        return { success: false, error: 'Invalid or expired token' };
+      }
+
+      // Find the pending record by vendor key and matching target month
+      const records = this.pendingQueueManager.getPendingVendors();
+      const record = records.find(r =>
+        r.vendorKey === vendorKey &&
+        this.calculateTargetMonth(r.scheduledDate) === targetMonth
+      );
+
+      if (record) {
+        this.pendingQueueManager.markCompleted(record.id);
+        AppLogger.info(`[WebAppApi] Marked vendor complete from local: ${vendorKey} ${targetMonth}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      AppLogger.error('Error marking vendor complete from local', error as Error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Generate token for local collector
+   * Token format: {recordId}:{timestamp}:{signature}
+   */
+  private generateLocalCollectorToken(recordId: string): string {
+    const timestamp = Date.now();
+    const payload = `${recordId}:${timestamp}`;
+    // Simple signature using script properties secret
+    const secret = this.getLocalCollectorSecret();
+    const signature = Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      payload + secret
+    ).map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('').substring(0, 16);
+    return `${payload}:${signature}`;
+  }
+
+  /**
+   * Validate local collector token
+   * Tokens expire after 24 hours
+   */
+  private validateLocalCollectorToken(token: string): boolean {
+    try {
+      const parts = token.split(':');
+      if (parts.length !== 3) {
+        return false;
+      }
+
+      const [recordId, timestampStr, providedSignature] = parts;
+      const timestamp = parseInt(timestampStr, 10);
+
+      // Check expiration (24 hours)
+      const now = Date.now();
+      if (now - timestamp > 24 * 60 * 60 * 1000) {
+        return false;
+      }
+
+      // Verify signature
+      const payload = `${recordId}:${timestampStr}`;
+      const secret = this.getLocalCollectorSecret();
+      const expectedSignature = Utilities.computeDigest(
+        Utilities.DigestAlgorithm.SHA_256,
+        payload + secret
+      ).map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('').substring(0, 16);
+
+      return expectedSignature === providedSignature;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get secret for token signing
+   */
+  private getLocalCollectorSecret(): string {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      let secret = props.getProperty('LOCAL_COLLECTOR_SECRET');
+      if (!secret) {
+        // Generate and store a new secret
+        secret = Utilities.getUuid();
+        props.setProperty('LOCAL_COLLECTOR_SECRET', secret);
+      }
+      return secret;
+    } catch {
+      return 'default-secret-for-testing';
+    }
+  }
+
+  /**
+   * Get or create invoice folder for a specific month
+   */
+  private getOrCreateInvoiceFolder(yearMonth: string): GoogleAppsScript.Drive.Folder {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const rootFolderId = props.getProperty('INVOICE_FOLDER_ID');
+      const rootFolder = rootFolderId
+        ? DriveApp.getFolderById(rootFolderId)
+        : DriveApp.getRootFolder();
+
+      // Parse year and month
+      const [year, month] = yearMonth.split('-');
+      const folderName = `${year}-${month}`;
+
+      // Find or create month folder
+      const folders = rootFolder.getFoldersByName(folderName);
+      if (folders.hasNext()) {
+        return folders.next();
+      }
+
+      return rootFolder.createFolder(folderName);
+    } catch {
+      return DriveApp.getRootFolder();
     }
   }
 }

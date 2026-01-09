@@ -49,6 +49,10 @@ function doGet(e) {
   return globalThis.doGet(e);
 }
 
+function doPost(e) {
+  return globalThis.doPost(e);
+}
+
 function include(filename) {
   return globalThis.include(filename);
 }
@@ -161,6 +165,107 @@ function clearTestDraftData() {
 
 function debugDraftData() {
   return globalThis.debugDraftData();
+}
+
+// Vendor invoice functions (Phase 3)
+function downloadVendorInvoices(vendorKey, optionsJson) {
+  return globalThis.downloadVendorInvoices(vendorKey, optionsJson);
+}
+
+function downloadAitemasuInvoices() {
+  return globalThis.downloadAitemasuInvoices();
+}
+
+function processScheduledVendors() {
+  return globalThis.processScheduledVendors();
+}
+
+function processScheduledVendorsAsync() {
+  return globalThis.processScheduledVendorsAsync();
+}
+
+function processVendorManually(vendorKey) {
+  return globalThis.processVendorManually(vendorKey);
+}
+
+function showVendorSchedule() {
+  return globalThis.showVendorSchedule();
+}
+
+function setupDailyVendorTrigger() {
+  return globalThis.setupDailyVendorTrigger();
+}
+
+function setupMonthlyVendorTrigger() {
+  return globalThis.setupMonthlyVendorTrigger();
+}
+
+// Auth failure handling functions (Phase 3.4)
+function checkVendorCookieStatus() {
+  return globalThis.checkVendorCookieStatus();
+}
+
+function updateVendorCookieMetadata(vendorKey, expirationDays) {
+  return globalThis.updateVendorCookieMetadata(vendorKey, expirationDays);
+}
+
+function testAuthFailureNotification(vendorKey) {
+  return globalThis.testAuthFailureNotification(vendorKey);
+}
+
+function testAuthFailureNotification_Aitemasu() {
+  return globalThis.testAuthFailureNotification_Aitemasu();
+}
+
+function updateCookie_Aitemasu_30days() {
+  return globalThis.updateCookie_Aitemasu_30days();
+}
+
+// Pending vendor queue functions (Phase 3.6)
+function api_getPendingVendors() {
+  return globalThis.api_getPendingVendors();
+}
+
+function api_getAllPendingVendorRecords() {
+  return globalThis.api_getAllPendingVendorRecords();
+}
+
+function api_getPendingVendorById(id) {
+  return globalThis.api_getPendingVendorById(id);
+}
+
+function api_startVendorProcessing(id) {
+  return globalThis.api_startVendorProcessing(id);
+}
+
+function api_completePendingVendor(id) {
+  return globalThis.api_completePendingVendor(id);
+}
+
+function api_failPendingVendor(id, errorMessage) {
+  return globalThis.api_failPendingVendor(id, errorMessage);
+}
+
+function queueVendorForManualProcessing(vendorKey) {
+  return globalThis.queueVendorForManualProcessing(vendorKey);
+}
+
+// Local collector functions (Phase 3.6 - Local Browser Automation)
+function api_getLocalCollectorCommand(id) {
+  return globalThis.api_getLocalCollectorCommand(id);
+}
+
+function api_uploadFromLocalCollector(token, vendorKey, targetMonth, file) {
+  return globalThis.api_uploadFromLocalCollector(token, vendorKey, targetMonth, file);
+}
+
+function api_markVendorCompleteFromLocal(token, vendorKey, targetMonth) {
+  return globalThis.api_markVendorCompleteFromLocal(token, vendorKey, targetMonth);
+}
+
+// Test function for local collector
+function testGetLocalCollectorCommand() {
+  return globalThis.testGetLocalCollectorCommand();
 }
 `
   },

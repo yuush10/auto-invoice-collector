@@ -1,7 +1,7 @@
 {
-  "name": "email-to-pdf",
-  "version": "1.0.0",
-  "description": "Email body to PDF conversion service for Auto Invoice Collector",
+  "name": "invoice-automation-service",
+  "version": "2.0.0",
+  "description": "Invoice automation service (email-to-pdf and vendor portal download) for Auto Invoice Collector",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -14,24 +14,30 @@
     "pdf",
     "puppeteer",
     "cloud-run",
-    "invoice"
+    "invoice",
+    "automation",
+    "vendor-portal"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@google-cloud/secret-manager": "^5.0.0",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "puppeteer": "^21.6.0",
-    "cors": "^2.8.5"
+    "google-ads-api": "^21.0.1",
+    "googleapis": "^169.0.0",
+    "http-proxy-middleware": "^3.0.5",
+    "puppeteer": "^21.6.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.10.4",
     "@types/cors": "^2.8.17",
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.2",
-    "jest": "^29.7.0",
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
-    "ts-jest": "^29.1.1"
+    "@types/node": "^20.10.4",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0"

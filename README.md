@@ -19,7 +19,7 @@ This system automatically:
 - **Development**: TypeScript + clasp
 - **Build**: Rollup
 - **Testing**: Jest
-- **OCR/AI**: Gemini API (gemini-1.5-flash)
+- **OCR/AI**: Gemini API (gemini-2.0-flash)
 
 ## Setup
 
@@ -105,6 +105,24 @@ npm run logs
 # Deploy
 npm run deploy
 ```
+
+## Claude Code Skills
+
+This project uses Claude Code skills for Git automation:
+
+| Skill | Purpose |
+|-------|---------|
+| `/worktree` | Create isolated development workspace |
+| `/quality-check` | Run tests, build, lint before commit |
+| `/commit` | Create conventional format commits |
+| `/push` | Push changes to remote |
+| `/pr` | Create PR with structured template |
+| `/ci-check` | Check CI status (future) |
+| `/merge` | Merge PR and cleanup branches/worktrees |
+| `/deploy` | Deploy to Google Apps Script |
+| `/vendor-status` | Check vendor portal credentials |
+
+See [CLAUDE.md](CLAUDE.md) for detailed workflow instructions.
 
 ## Configuration
 
@@ -305,10 +323,30 @@ Email body to PDF conversion (Issue #29):
 
 **Supported services**: Canva, Mailchimp, and other email-body-only invoices
 
-### Future Phases
+### Phase 3 - ✅ Complete
 
-- Phase 3: URL login & download automation (Issue #30)
-- Phase 4: Journal entry auto-generation (Issues #33-#38)
+Vendor portal login & invoice download automation:
+- ✅ Phase 3.1: Download infrastructure (Issue #60)
+- ✅ Phase 3.2: IBJ vendor implementation
+  - Browser automation via Puppeteer
+  - Cookie-based authentication
+  - Gemini OCR metadata extraction
+- ✅ Phase 3.3: Aitemasu vendor implementation (Issue #33)
+  - Browser automation via Puppeteer
+  - Stripe billing portal navigation
+  - Gemini OCR metadata extraction
+  - Google Drive upload with proper naming
+- ✅ Phase 3.4: Google Ads vendor implementation
+  - Browser automation via Puppeteer
+  - Invoice download from billing portal
+
+### Phase 4 - ✅ Complete
+
+Journal entry auto-generation (Issues #33-#38):
+- ✅ DraftSheet management
+- ✅ Gemini AI journal suggestions
+- ✅ Review Web App UI
+- ✅ Audit trail for 電子帳簿保存法 compliance
 
 ## Documentation
 

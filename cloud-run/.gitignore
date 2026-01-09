@@ -4,3 +4,6 @@ dist/
 .env
 .DS_Store
 coverage/
+
+# Manual test files with credentials
+test-google-ads.ts

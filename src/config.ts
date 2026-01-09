@@ -13,6 +13,26 @@ export interface ServiceConfig {
 }
 
 /**
+ * Vendor configuration for portal automation (Phase 3)
+ */
+export interface VendorConfig {
+  /** Unique vendor identifier */
+  vendorKey: string;
+  /** Vendor display name */
+  vendorName: string;
+  /** Domain patterns for URL matching */
+  domainPatterns: string[];
+  /** URL pattern for more specific matching */
+  urlPattern?: RegExp;
+  /** Whether this vendor requires login */
+  loginRequired: boolean;
+  /** Special handling type */
+  specialHandling?: 'api' | 'oauth' | 'mfa-required';
+  /** Portal URL for login/access */
+  portalUrl?: string;
+}
+
+/**
  * Service configurations for invoice collection
  * Add new services here as needed
  */
@@ -73,6 +93,74 @@ export const SERVICES: ServiceConfig[] = [
 ];
 
 /**
+ * Vendor schedule configuration for automated processing
+ * Each vendor is triggered on a specific day of the month
+ */
+export interface VendorSchedule {
+  /** Day of month to trigger (1-31) */
+  day: number;
+  /** Hour to trigger (0-23, JST) */
+  hour: number;
+  /** Whether this vendor is enabled for automated processing */
+  enabled: boolean;
+  /**
+   * Whether this vendor requires manual trigger (e.g., CAPTCHA solving).
+   * If true, the vendor will be queued as "pending" on scheduled date
+   * instead of auto-executing. User must manually initiate via Web App.
+   */
+  requiresManualTrigger?: boolean;
+}
+
+/**
+ * Vendor schedule mapping
+ * Key: vendorKey, Value: schedule configuration
+ */
+export const VENDOR_SCHEDULE: Record<string, VendorSchedule> = {
+  'aitemasu': { day: 1, hour: 8, enabled: true },
+  'google-ads': { day: 4, hour: 8, enabled: true },
+  'ibj': { day: 11, hour: 8, enabled: true, requiresManualTrigger: true },
+  'canva': { day: 11, hour: 9, enabled: true, requiresManualTrigger: true },
+};
+
+/**
+ * Vendor configurations for portal automation (Phase 3)
+ * These vendors require login automation to download invoices
+ */
+export const VENDOR_CONFIGS: VendorConfig[] = [
+  {
+    vendorKey: 'ibj',
+    vendorName: 'IBJ',
+    domainPatterns: ['ibjapan.com'],
+    loginRequired: true,
+    portalUrl: 'https://www.ibjapan.com/div/logins',
+  },
+  {
+    vendorKey: 'aitemasu',
+    vendorName: 'Aitemasu',
+    domainPatterns: ['aitemasu.me'],
+    loginRequired: true,
+    portalUrl: 'https://app.aitemasu.me/',
+  },
+  {
+    vendorKey: 'google-ads',
+    vendorName: 'Google Ads',
+    domainPatterns: ['ads.google.com'],
+    urlPattern: /ads\.google\.com\/aw\/billing/,
+    loginRequired: true,
+    specialHandling: 'api',
+    portalUrl: 'https://ads.google.com/',
+  },
+  {
+    vendorKey: 'canva',
+    vendorName: 'Canva',
+    domainPatterns: ['canva.com'],
+    loginRequired: true,
+    specialHandling: 'oauth',
+    portalUrl: 'https://www.canva.com/settings/billing',
+  },
+];
+
+/**
  * Get configuration from Script Properties
  */
 export class Config {
@@ -114,5 +202,17 @@ export class Config {
    */
   static getInvokerServiceAccount(): string {
     return this.getProperty('INVOKER_SERVICE_ACCOUNT');
+  }
+
+  /**
+   * Get Cloud Run URL for vendor invoice automation (Phase 3)
+   * Falls back to CLOUD_RUN_URL if not set
+   */
+  static getVendorCloudRunUrl(): string {
+    try {
+      return this.getProperty('VENDOR_CLOUD_RUN_URL');
+    } catch {
+      return this.getCloudRunUrl();
+    }
   }
 }

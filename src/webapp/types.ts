@@ -3,8 +3,7 @@
  */
 
 import { DraftStatus, JournalEntry, JournalEntrySuggestion } from '../types/journal';
-import { DraftHistoryEntry, DictionaryHistoryEntry } from '../types/history';
-import { PromptConfig, PromptType } from '../types/prompt';
+import { PromptType } from '../types/prompt';
 import { DocumentType } from '../types';
 
 /**
@@ -93,6 +92,15 @@ export interface ApproveRequest {
   selectedEntry: JournalEntry[];
   registerToDict: boolean;
   editReason?: string;
+}
+
+/**
+ * Result of approving a draft
+ * Includes the approved draft and any warnings that occurred during processing
+ */
+export interface ApproveResult {
+  draft: DraftDetail;
+  warnings?: string[];
 }
 
 /**

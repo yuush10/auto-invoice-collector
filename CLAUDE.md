@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Language: TypeScript (transpiled to JavaScript)
 - Build: Rollup
 - Testing: Jest
-- OCR/AI: Gemini API (gemini-1.5-flash)
+- OCR/AI: Gemini API (gemini-2.0-flash)
 - Development: clasp CLI
 
 **Current Status:** Phase 4.3 Complete (Journal Entry Review Web App)
@@ -138,11 +138,15 @@ Closes #N" \
 gh pr list
 gh pr merge <PR-number> --squash --delete-branch
 
-# 6. Cleanup after merge
+# 6. Cleanup after merge (MANDATORY)
 git checkout main && git pull
-git branch -d feature/description      # Delete local branch
-git push origin --delete feature/description  # Delete remote branch (if not auto-deleted)
 git fetch --prune                      # Clean up remote tracking branches
+git branch -d feature/description      # Delete local branch
+
+# 7. VERIFY remote branch deletion (REQUIRED)
+git branch -r | grep feature/description  # Should return nothing
+# If branch still exists, delete manually:
+# git push origin --delete feature/description
 ```
 
 **Branch Naming:**
@@ -156,8 +160,10 @@ git fetch --prune                      # Clean up remote tracking branches
 - Always create PR via `gh pr create`
 - Include clear title and description
 - Reference related issues with `Closes #N`
-- Merge via `gh pr merge` with `--squash` flag
-- Use `--delete-branch` to auto-cleanup remote branch
+- Merge via `gh pr merge` with `--squash --delete-branch` flags
+- **ALWAYS verify** remote branch deletion after merge with `git branch -r`
+- Run `git fetch --prune` to sync local tracking refs
+- If remote branch persists, delete with `git push origin --delete <branch>`
 - Never use `git merge` locally and push to main
 
 ### 2.1 Multi-Phase Development (Development Branches)
@@ -207,7 +213,10 @@ gh pr create --base develop/phase4 \
 # 5. After PR approval, merge to develop branch
 gh pr merge <PR-number> --squash --delete-branch
 
-# 6. Repeat steps 2-5 for each sub-issue
+# 5.5. IMPORTANT: Manually close the issue (GitHub doesn't auto-close for non-main branches)
+gh issue close <issue-number> --comment "Completed in PR #<PR-number>, merged to develop/phase4"
+
+# 6. Repeat steps 2-5.5 for each sub-issue
 
 # 7. After ALL sub-issues complete and tested, merge develop to main
 git checkout develop/phase4 && git pull
@@ -216,13 +225,22 @@ gh pr create --base main --head develop/phase4 \
   --body "Merges all Phase 4 sub-issues..."
 
 # 8. After final PR approval
-gh pr merge <PR-number> --squash
+gh pr merge <PR-number> --squash --delete-branch
 
-# 9. Cleanup
+# 9. Cleanup and VERIFY (MANDATORY)
 git checkout main && git pull
-git branch -d develop/phase4
-git push origin --delete develop/phase4
+git fetch --prune
+git branch -d develop/phase4           # Delete local branch
+
+# 10. VERIFY remote branch deletion (REQUIRED)
+git branch -r | grep develop/phase4    # Should return nothing
+# If branch still exists, delete manually:
+# git push origin --delete develop/phase4
 ```
+
+**IMPORTANT: Manual Issue Closing Required**
+
+GitHub only auto-closes issues when PRs merge to the DEFAULT branch (usually `main`). When merging to development branches, you MUST manually close issues using `gh issue close` as shown in step 5.5 above.
 
 **When to Use:**
 - Phases with 3+ related sub-issues
@@ -248,12 +266,52 @@ footer (optional)
 
 Types: feat, fix, docs, style, refactor, test, chore
 
-### 4. Subagent Coordination
+### 4. Worktree Workflow (MANDATORY)
+
+**CRITICAL: Create a worktree before starting ANY implementation work.**
+
+This is mandatory regardless of whether parallel work is occurring. Benefits:
+- Clean isolation for each feature
+- Easy context switching without stashing
+- Enables parallel work if needed later
+- Low overhead (one command)
+
+**Quick Start:**
+```bash
+# Use the /worktree skill (preferred)
+/worktree create for issue #N
+
+# Or manually:
+git worktree add ../auto-invoice-collector-{name} -b {type}/{issue}-{description}
+cd ../auto-invoice-collector-{name}
+npm install
+```
+
+**Naming Convention:**
+
+| Purpose | Directory | Branch |
+|---------|-----------|--------|
+| Feature | `-feature-{issue}` | `feature/{issue}-{desc}` |
+| Bug fix | `-fix-{issue}` | `fix/{issue}-{desc}` |
+| Docs | `-docs-{issue}` | `docs/{issue}-{desc}` |
+
+**After Work Complete:**
+```bash
+# From main repo directory
+git worktree remove ../auto-invoice-collector-{name}
+```
+
+**CRITICAL: Worktree cleanup is MANDATORY.** Before considering any implementation task complete, you MUST:
+1. Ensure changes are merged (PR approved and merged)
+2. Remove the worktree using the command above or `/worktree remove`
+3. Never leave stale worktrees - they clutter the workspace and cause confusion
+
+### 5. Subagent Coordination
 
 When delegating work to subagents (parallel Claude instances):
 
 **Before Delegation:**
-1. Create dedicated worktree: `git worktree add ../auto-invoice-collector-{name} -b {branch}`
+1. Create dedicated worktree using `/worktree` skill (see Section 4)
 2. Define clear scope and acceptance criteria
 3. Provide worktree path to subagent
 
@@ -275,6 +333,131 @@ When delegating work to subagents (parallel Claude instances):
 3. If issues → fix and repeat step 2
 4. All checks pass → proceed to commit
 ```
+
+### 6. Skill Auto-Invocation
+
+Claude MUST proactively invoke project skills when context matches their descriptions. Do NOT manually execute commands that a skill is designed to handle.
+
+**Project Skills and Trigger Contexts:**
+
+| Skill | Trigger Context | Example |
+|-------|-----------------|---------|
+| `/worktree` | **Before ANY implementation** and **after completing work** (for cleanup) | Use to create workspace AND to remove after merge |
+| `/quality-check` | Before any commit, after implementation | Use instead of manual `npm test` |
+| `/commit` | After `/quality-check` passes, when saving changes | Use instead of manual `git commit` |
+| `/push` | After `/commit`, before `/pr` | Use instead of manual `git push` |
+| `/pr` | After `/push`, when ready for review | Use instead of manual `gh pr create` |
+| `/ci-check` | Before merge (future - use `/quality-check` for now) | Check CI status when available |
+| `/merge` | After PR approval, when ready to merge | Use instead of manual merge + cleanup |
+| `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
+| `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
+
+**Required Behavior:**
+
+1. **Before implementations**: Always invoke `/worktree` skill first to create isolated workspace
+2. **After implementation**: Invoke `/quality-check` skill
+3. **To save changes**: Invoke `/commit` skill (after quality-check passes)
+4. **To upload changes**: Invoke `/push` skill
+5. **To request review**: Invoke `/pr` skill (Main Claude provides title/body content)
+6. **Before merge**: Invoke `/ci-check` (or `/quality-check` if no CI)
+7. **After approval**: Invoke `/merge` skill for merge + cleanup
+8. **For deployments**: Invoke `/deploy` skill
+9. **For vendor auth checks**: Invoke `/vendor-status` when relevant
+
+**Why This Matters:**
+- Skills contain project-specific logic and checks
+- Skills ensure consistent workflows across sessions
+- Skills may include steps that manual commands miss
+
+### 7. Git Automation Best Practices
+
+#### 7.1 Automation Delegation Matrix
+
+Operations are delegated based on reversibility, context requirements, and judgment needs:
+
+| Operation | Automation Level | Reason | Skill |
+|-----------|------------------|--------|-------|
+| commit | Full | Diff is clear, reversible, atomic | `/commit` |
+| push | Full | No context needed | `/push` |
+| PR creation (exec) | Partial | Execution routine, content by Main Claude | `/pr` |
+| PR Title/Body | Review | Requires session context | Main Claude |
+| CI check | Full (future) | Machine judgment (no CI currently) | `/ci-check` |
+| merge PR | Partial | Timing judgment may be required | `/merge` |
+| branch deletion | Full | Post-merge, automatic | `/merge` |
+| worktree deletion | Full | Post-merge ceremony | `/merge` |
+
+#### 7.2 Prohibited Git Commands
+
+Claude SHOULD NOT execute these commands (warning, not blocked):
+
+```bash
+# Prefer worktrees over checkout
+git checkout <branch>       # Use worktrees instead
+git checkout -b <branch>    # Use worktrees instead
+
+# Never force push
+git push --force            # Prohibited
+git push -f                 # Prohibited
+
+# Never modify history on shared branches
+git rebase -i               # Prohibited (interactive)
+git reset --hard            # Prohibited on shared branches
+
+# Never bypass hooks
+git commit --no-verify      # Prohibited
+```
+
+**Why prefer worktrees over checkout:**
+- Worktrees provide isolation without context switching
+- Prevents accidental commits to wrong branch
+- Enables parallel work naturally
+- Clearer ownership of changes
+
+#### 7.3 Recommended Git Flow
+
+```
+[Subagent/Claude]
+  /worktree create → implement → /quality-check → /commit → /push
+        ↓
+[Main Claude]
+  Review PR body from /pr (add WHY, session context, review focus)
+        ↓
+[Main Claude]
+  /pr create → User approval → /merge → auto-cleanup
+```
+
+#### 7.4 PR Body Requirements
+
+When creating a PR, Main Claude MUST provide:
+
+```markdown
+## Summary
+<!-- REQUIRED: Explain WHY this change is needed, not just WHAT it does -->
+<!-- Include session context that led to this change -->
+
+## Changes
+<!-- Auto-generated from diff, human may enhance -->
+
+## Review Focus
+<!-- Key areas reviewers should check -->
+
+## Test Plan
+<!-- How was this tested? -->
+
+Closes #<issue-number>
+```
+
+#### 7.5 Key Principle: 1 Worktree = 1 Branch = 1 PR
+
+Each implementation should follow:
+- ONE worktree for isolation
+- ONE branch for the feature
+- ONE PR for review
+
+This ensures:
+- Clear ownership
+- Easy cleanup
+- Traceable history
 
 ## Google Apps Script Development
 
@@ -304,7 +487,19 @@ auto-invoice-collector/
 │   │   │   └── FileUploader.ts            # File upload to Drive
 │   │   │
 │   │   ├── ocr/
-│   │   │   └── GeminiOcrService.ts        # Gemini API OCR integration
+│   │   │   ├── GeminiOcrService.ts        # Gemini API OCR integration
+│   │   │   └── JournalExtractionPrompt.ts # Invoice extraction prompts
+│   │   │
+│   │   ├── cloudrun/
+│   │   │   └── CloudRunClient.ts          # Cloud Run service client
+│   │   │
+│   │   ├── url/
+│   │   │   └── UrlExtractor.ts            # URL extraction from emails
+│   │   │
+│   │   ├── vendors/                       # Phase 3: Vendor portal automation
+│   │   │   ├── CookieExpirationTracker.ts # Cookie expiration monitoring
+│   │   │   ├── VendorClient.ts            # Vendor API client
+│   │   │   └── VendorInvoiceProcessor.ts  # Vendor invoice processing
 │   │   │
 │   │   ├── naming/
 │   │   │   └── FileNamingService.ts       # File naming logic
@@ -319,9 +514,10 @@ auto-invoice-collector/
 │   │       ├── DraftSheetManager.ts       # Draft CRUD operations
 │   │       ├── DraftHistorySheetManager.ts # Change history tracking
 │   │       ├── DictionarySheetManager.ts  # Learning dictionary
-│   │       ├── JournalExtractor.ts        # Invoice data extraction
-│   │       ├── JournalSuggestionService.ts # Journal entry suggestions
+│   │       ├── DictionaryHistorySheetManager.ts # Dictionary change history
+│   │       ├── DictionaryService.ts       # Dictionary learning logic
 │   │       ├── JournalGenerator.ts        # Orchestration service
+│   │       ├── PromptConfigSheetManager.ts # Prompt configuration storage
 │   │       └── PromptService.ts           # Prompt management
 │   │
 │   ├── webapp/                  # Phase 4.3: Review Web App
@@ -332,11 +528,13 @@ auto-invoice-collector/
 │   │   ├── index.ts             # TypeScript type definitions
 │   │   ├── journal.ts           # Journal entry types
 │   │   ├── history.ts           # History tracking types
-│   │   └── prompt.ts            # Prompt configuration types
+│   │   ├── prompt.ts            # Prompt configuration types
+│   │   └── vendor.ts            # Vendor automation types
 │   │
 │   └── utils/
 │       ├── logger.ts            # Logging utilities
-│       └── dateUtils.ts         # Date manipulation utilities
+│       ├── dateUtils.ts         # Date manipulation utilities
+│       └── docTypeDetector.ts   # Document type detection (請求書/領収書)
 │
 ├── test/                        # Jest tests
 │   ├── dateUtils.test.ts        # Unit tests
@@ -587,15 +785,21 @@ Given limited context windows:
 ```json
 {
   "timeZone": "Asia/Tokyo",
-  "dependencies": {},
-  "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8",
+  "dependencies": {
+    "enabledAdvancedServices": []
+  },
   "oauthScopes": [
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.labels",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/script.external_request"
-  ]
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/cloud-platform"
+  ],
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
 }
 ```
 
@@ -671,6 +875,15 @@ gh issue close 5 --comment "Implemented in PR #12"
 gh issue reopen 5
 ```
 
+**IMPORTANT: Manual Closing for Development Branch Merges**
+
+GitHub only auto-closes issues when PRs merge to the DEFAULT branch (usually `main`).
+When merging to development branches (e.g., `develop/phase4`), you MUST manually close issues:
+
+```bash
+gh issue close <issue-number> --comment "Completed in PR #<PR-number>, merged to develop/phase-name"
+```
+
 ## Quick Reference
 
 ### Worktree Workflow
@@ -733,5 +946,6 @@ Always:
 2. Create feature branch before any changes
 3. Create PR via CLI (`gh pr create`)
 4. Reference issues in commits (`Closes #N`)
-5. Merge via CLI (`gh pr merge`)
-6. Clean up branches after merge
+5. Merge via CLI (`gh pr merge --delete-branch`)
+6. Clean up local branches after merge
+7. **VERIFY remote branch deletion** (`git branch -r`)
