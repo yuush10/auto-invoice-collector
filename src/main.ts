@@ -250,6 +250,8 @@ class InvoiceProcessor {
 
     AppLogger.info(`Processing ${attachments.length} attachments from message ${messageId}`);
 
+    let successCount = 0;
+
     attachments.forEach((attachment, index) => {
       try {
         // Calculate hash for duplicate detection
@@ -327,6 +329,7 @@ class InvoiceProcessor {
         }
 
         AppLogger.info(`Successfully processed attachment ${index}: ${fileName}`);
+        successCount++;
       } catch (error) {
         AppLogger.error(`Error processing attachment ${index} from message ${messageId}`, error as Error);
 
@@ -353,8 +356,13 @@ class InvoiceProcessor {
       }
     });
 
-    // Mark message as processed
-    this.gmailSearcher.markAsProcessed(message);
+    // Only mark as processed if at least one attachment succeeded
+    // This allows retry on next run if all attachments failed (e.g., transient server errors)
+    if (successCount > 0) {
+      this.gmailSearcher.markAsProcessed(message);
+    } else {
+      AppLogger.warn(`No attachments successfully processed for message ${messageId}, not marking as processed for retry`);
+    }
   }
 
   /**
