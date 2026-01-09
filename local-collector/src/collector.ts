@@ -129,12 +129,12 @@ export class Collector {
         '--no-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
-        '--window-size=1280,720',
+        '--window-size=1440,900',
         '--start-maximized',
       ],
       defaultViewport: {
-        width: 1280,
-        height: 670,
+        width: 1440,
+        height: 900,
       },
       ignoreDefaultArgs: ['--enable-automation'],
     });
