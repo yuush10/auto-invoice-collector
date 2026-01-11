@@ -2072,6 +2072,26 @@ function testAuthFailureNotification_Aitemasu(): void {
 (globalThis as any).testAuthFailureNotification_Aitemasu = testAuthFailureNotification_Aitemasu;
 
 /**
+ * Test vendor notification email for Canva
+ * Run this from Apps Script editor to verify MailApp.sendEmail works
+ */
+function testVendorNotification_Canva(): void {
+  queueVendorForManualProcessing('canva', new Date());
+  Logger.log('Canva vendor notification test complete - check your email');
+}
+(globalThis as any).testVendorNotification_Canva = testVendorNotification_Canva;
+
+/**
+ * Test vendor notification email for IBJ
+ * Run this from Apps Script editor to verify MailApp.sendEmail works
+ */
+function testVendorNotification_IBJ(): void {
+  queueVendorForManualProcessing('ibj', new Date());
+  Logger.log('IBJ vendor notification test complete - check your email');
+}
+(globalThis as any).testVendorNotification_IBJ = testVendorNotification_IBJ;
+
+/**
  * Update Aitemasu cookie metadata (30 day expiration)
  * Run after manually refreshing cookies
  */
