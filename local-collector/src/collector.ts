@@ -16,6 +16,7 @@ export interface CollectorOptions {
   targetMonth?: string;
   headless: boolean;
   skipUpload: boolean;
+  gasWebAppUrl?: string;
 }
 
 export interface CollectionResult {
@@ -71,7 +72,7 @@ export class Collector {
       // Upload to Google Drive
       if (!this.options.skipUpload && result.files.length > 0) {
         spinner.start('Uploading to Google Drive...');
-        const uploader = new Uploader(this.options.token);
+        const uploader = new Uploader(this.options.token, this.options.gasWebAppUrl);
 
         for (const file of result.files) {
           await uploader.upload(file, this.options.vendorKey, targetMonth);

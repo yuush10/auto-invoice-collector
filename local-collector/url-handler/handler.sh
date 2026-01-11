@@ -24,6 +24,7 @@ echo "$(date): Query string: $QUERY" >> "$LOG_FILE"
 VENDOR=""
 MONTH=""
 TOKEN=""
+URL_PARAM=""
 
 IFS='&' read -ra PARAMS <<< "$QUERY"
 for param in "${PARAMS[@]}"; do
@@ -33,10 +34,11 @@ for param in "${PARAMS[@]}"; do
         vendor) VENDOR="$value" ;;
         month) MONTH="$value" ;;
         token) TOKEN="$value" ;;
+        url) URL_PARAM="$value" ;;
     esac
 done
 
-echo "$(date): Parsed - vendor=$VENDOR, month=$MONTH, token=$TOKEN" >> "$LOG_FILE"
+echo "$(date): Parsed - vendor=$VENDOR, month=$MONTH, token=$TOKEN, url=$URL_PARAM" >> "$LOG_FILE"
 
 # Validate parameters
 if [[ -z "$VENDOR" || -z "$MONTH" || -z "$TOKEN" ]]; then
@@ -47,7 +49,11 @@ fi
 
 # Build the command - __LOCAL_COLLECTOR_DIR__ is replaced at setup time
 # Use node to run the local script directly (not npx, since package isn't published)
+# Include --url if provided (ensures token validation by correct GAS deployment)
 CMD="cd __LOCAL_COLLECTOR_DIR__ && node ./bin/collect.js collect --vendor=$VENDOR --target-month=$MONTH --token=$TOKEN"
+if [[ -n "$URL_PARAM" ]]; then
+    CMD="$CMD --url=$URL_PARAM"
+fi
 
 echo "$(date): Command: $CMD" >> "$LOG_FILE"
 

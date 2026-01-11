@@ -18,6 +18,7 @@ program
   .option('--target-month <month>', 'Target month in YYYY-MM format (default: previous month)')
   .option('--headless', 'Run in headless mode (not recommended for reCAPTCHA)')
   .option('--no-upload', 'Skip uploading to Google Drive')
+  .option('--url <url>', 'GAS Web App URL for upload (ensures token validation by correct deployment)')
   .action(async (options) => {
     const collector = new Collector({
       vendorKey: options.vendor,
@@ -25,6 +26,7 @@ program
       targetMonth: options.targetMonth,
       headless: options.headless || false,
       skipUpload: !options.upload,
+      gasWebAppUrl: options.url,
     });
 
     try {

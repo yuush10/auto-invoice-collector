@@ -21,10 +21,11 @@ export class Uploader {
   private token?: string;
   private gasWebAppUrl: string;
 
-  constructor(token?: string) {
+  constructor(token?: string, gasWebAppUrl?: string) {
     this.token = token;
-    // GAS Web App URL
+    // GAS Web App URL priority: parameter > env var > hardcoded fallback
     this.gasWebAppUrl =
+      gasWebAppUrl ||
       process.env.GAS_WEBAPP_URL ||
       'https://script.google.com/macros/s/AKfycbzJDXRs2pgD-K9ac-rfXualEfAIbAn9jEtYr9ui1WKYvvrJRh1uiyRoT8cqRq8Q5WH9/exec';
   }
