@@ -5,6 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_COLLECTOR_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="InvoiceCollectorHandler"
 APP_PATH="$HOME/Applications/$APP_NAME.app"
 
@@ -19,7 +20,7 @@ rm -rf "$APP_PATH"
 
 # Create the AppleScript app using osacompile
 # This creates a proper app that handles URL open events
-cat > /tmp/invoice_handler.applescript << 'APPLESCRIPT_EOF'
+cat > /tmp/invoice_handler.applescript << APPLESCRIPT_EOF
 on open location theURL
     -- Log the URL for debugging
     do shell script "echo 'Received URL: " & theURL & "' >> /tmp/invoicecollector.log"
@@ -58,8 +59,8 @@ on open location theURL
 
         -- Validate we have all parameters
         if vendorValue is not "" and monthValue is not "" and tokenValue is not "" then
-            -- Build the command
-            set theCommand to "npx @auto-invoice/local-collector collect --vendor=" & vendorValue & " --target-month=" & monthValue & " --token=" & tokenValue
+            -- Build the command (cd to local-collector directory first)
+            set theCommand to "cd $LOCAL_COLLECTOR_DIR && npx @auto-invoice/local-collector collect --vendor=" & vendorValue & " --target-month=" & monthValue & " --token=" & tokenValue
 
             -- Open Terminal and run the command
             tell application "Terminal"
