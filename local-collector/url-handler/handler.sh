@@ -3,6 +3,7 @@
 # Called by the InvoiceCollectorHandler.app AppleScript
 
 LOG_FILE="/tmp/invoicecollector.log"
+COMMAND_FILE="/tmp/invoicecollector_run.command"
 
 # Get the URL from the argument
 URL="$1"
@@ -49,15 +50,18 @@ CMD="cd __LOCAL_COLLECTOR_DIR__ && npx @auto-invoice/local-collector collect --v
 
 echo "$(date): Command: $CMD" >> "$LOG_FILE"
 
-# Try to run in Terminal
-if osascript -e "tell application \"Terminal\"
-    activate
-    do script \"$CMD\"
-end tell" 2>> "$LOG_FILE"; then
-    echo "$(date): Successfully opened Terminal" >> "$LOG_FILE"
-else
-    # Fallback: copy to clipboard and notify
-    echo "$CMD" | pbcopy
-    osascript -e "display notification \"Command copied to clipboard. Paste in Terminal.\" with title \"Invoice Collector\""
-    echo "$(date): Fallback - copied command to clipboard" >> "$LOG_FILE"
-fi
+# Create a .command file and open it with Terminal
+# This bypasses Automation permission requirements
+cat > "$COMMAND_FILE" << EOF
+#!/bin/bash
+$CMD
+# Keep terminal open to see output
+echo ""
+echo "Press any key to close this window..."
+read -n 1
+EOF
+
+chmod +x "$COMMAND_FILE"
+open "$COMMAND_FILE"
+
+echo "$(date): Opened .command file in Terminal" >> "$LOG_FILE"
