@@ -46,7 +46,8 @@ if [[ -z "$VENDOR" || -z "$MONTH" || -z "$TOKEN" ]]; then
 fi
 
 # Build the command - __LOCAL_COLLECTOR_DIR__ is replaced at setup time
-CMD="cd __LOCAL_COLLECTOR_DIR__ && npx @auto-invoice/local-collector collect --vendor=$VENDOR --target-month=$MONTH --token=$TOKEN"
+# Use node to run the local script directly (not npx, since package isn't published)
+CMD="cd __LOCAL_COLLECTOR_DIR__ && node ./bin/collect.js collect --vendor=$VENDOR --target-month=$MONTH --token=$TOKEN"
 
 echo "$(date): Command: $CMD" >> "$LOG_FILE"
 
