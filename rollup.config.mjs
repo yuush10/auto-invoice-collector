@@ -217,6 +217,14 @@ function testAuthFailureNotification_Aitemasu() {
   return globalThis.testAuthFailureNotification_Aitemasu();
 }
 
+function testVendorNotification_Canva() {
+  return globalThis.testVendorNotification_Canva();
+}
+
+function testVendorNotification_IBJ() {
+  return globalThis.testVendorNotification_IBJ();
+}
+
 function updateCookie_Aitemasu_30days() {
   return globalThis.updateCookie_Aitemasu_30days();
 }
