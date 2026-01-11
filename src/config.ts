@@ -215,4 +215,18 @@ export class Config {
       return this.getCloudRunUrl();
     }
   }
+
+  /**
+   * Get the Web App URL for notifications
+   * Set WEB_APP_URL in Script Properties after deploying as a web app
+   */
+  static getWebAppUrl(): string {
+    try {
+      return this.getProperty('WEB_APP_URL');
+    } catch {
+      // Fallback to runtime detection (only works in web context)
+      const runtimeUrl = ScriptApp.getService().getUrl();
+      return runtimeUrl || 'Web App URL not configured';
+    }
+  }
 }

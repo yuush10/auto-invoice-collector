@@ -1693,8 +1693,8 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
       timeZone: 'Asia/Tokyo'
     });
 
-    // TODO: Phase 4 - Replace with VNC link
-    const webAppUrl = ScriptApp.getService().getUrl();
+    // Web App URL from Script Properties (set WEB_APP_URL after deployment)
+    const webAppUrl = Config.getWebAppUrl();
 
     const subject = `[Auto Invoice Collector] ${vendorName} 請求書処理待機中`;
     const body = `${vendorName}の請求書処理が待機中です。
