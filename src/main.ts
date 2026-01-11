@@ -1710,6 +1710,8 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
     });
 
     const subject = `[Auto Invoice Collector] ${vendorName} 請求書処理待機中`;
+
+    // Plain text fallback
     const body = `${vendorName}の請求書処理が待機中です。
 
 このベンダーはCAPTCHA認証が必要なため、自動処理ができません。
@@ -1720,24 +1722,78 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
 - 予定日時: ${dateStr} ${timeStr}
 - ステータス: 待機中
 
-■ ワンクリック実行
-以下のリンクをクリックして処理を開始（要URL Handler設定）:
+■ ワンクリック実行（要URL Handler設定）
 ${localCollectorUrl || 'URL生成に失敗しました'}
 
-■ 手動実行（上記が動作しない場合）
+■ 手動実行
 ターミナルで以下のコマンドを実行:
 ${localCollectorCommand || 'コマンド生成に失敗しました'}
-
-処理を開始すると、ブラウザが表示されCAPTCHA認証を行えます。
-認証後は自動的にOTP処理と請求書ダウンロードが行われます。
 
 ---
 Auto Invoice Collector`;
 
+    // HTML email with clickable link
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    h2 { color: #2c3e50; margin-bottom: 20px; }
+    .section { margin-bottom: 24px; }
+    .section-title { font-weight: bold; color: #34495e; margin-bottom: 8px; }
+    .details { background: #f8f9fa; padding: 12px 16px; border-radius: 6px; }
+    .details li { margin: 4px 0; }
+    .btn { display: inline-block; padding: 12px 24px; background: #3498db; color: white !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 8px 0; }
+    .btn:hover { background: #2980b9; }
+    .command { background: #2c3e50; color: #ecf0f1; padding: 12px 16px; border-radius: 6px; font-family: 'Monaco', 'Menlo', monospace; font-size: 13px; overflow-x: auto; word-break: break-all; }
+    .note { color: #7f8c8d; font-size: 14px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #ecf0f1; color: #95a5a6; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>${vendorName} 請求書処理待機中</h2>
+
+    <p>このベンダーはCAPTCHA認証が必要なため、自動処理ができません。<br>手動で処理を開始してください。</p>
+
+    <div class="section">
+      <div class="section-title">詳細</div>
+      <ul class="details">
+        <li><strong>ベンダー:</strong> ${vendorName}</li>
+        <li><strong>予定日時:</strong> ${dateStr} ${timeStr}</li>
+        <li><strong>ステータス:</strong> 待機中</li>
+      </ul>
+    </div>
+
+    ${localCollectorUrl ? `
+    <div class="section">
+      <div class="section-title">ワンクリック実行</div>
+      <p class="note">下のボタンをクリックして処理を開始（要URL Handler設定）</p>
+      <a href="${localCollectorUrl}" class="btn">処理を開始</a>
+    </div>
+    ` : ''}
+
+    <div class="section">
+      <div class="section-title">手動実行</div>
+      <p class="note">ターミナルで以下のコマンドを実行:</p>
+      <div class="command">${localCollectorCommand || 'コマンド生成に失敗しました'}</div>
+    </div>
+
+    <p>処理を開始すると、ブラウザが表示されCAPTCHA認証を行えます。<br>認証後は自動的にOTP処理と請求書ダウンロードが行われます。</p>
+
+    <div class="footer">Auto Invoice Collector</div>
+  </div>
+</body>
+</html>`;
+
     MailApp.sendEmail({
       to: Config.getAdminEmail(),
       subject,
-      body
+      body,
+      htmlBody
     });
 
     AppLogger.info(`[Vendor] Sent pending notification for ${vendorKey}`);
