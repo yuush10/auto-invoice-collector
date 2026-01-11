@@ -26,7 +26,7 @@ on open location theURL
 
     -- Parse URL: invoicecollector://collect?vendor=X&month=Y&token=Z
     if theURL starts with "invoicecollector://collect?" then
-        set queryString to text 25 thru -1 of theURL -- Remove "invoicecollector://collect?"
+        set queryString to text 28 thru -1 of theURL -- Remove "invoicecollector://collect?" (27 chars)
 
         set vendorValue to ""
         set monthValue to ""
