@@ -1666,7 +1666,7 @@ function downloadAitemasuInvoices(): void {
 /**
  * Queue a vendor for manual processing
  * Called when a vendor has requiresManualTrigger=true
- * Stores pending task in sheet and sends notification email
+ * Stores pending task in sheet and sends notification email with one-click trigger
  */
 function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date): void {
   const vendorConfig = VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
@@ -1678,6 +1678,22 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
   const queueManager = getPendingVendorQueueManager();
   const record = queueManager.addPendingVendor(vendorKey, scheduledDate);
   AppLogger.info(`[Vendor] Created pending record: ${record.id}`);
+
+  // Generate local collector command with token
+  const commandResult = getWebAppApi().getLocalCollectorCommand(record.id);
+  let localCollectorUrl = '';
+  let localCollectorCommand = '';
+
+  if (commandResult.success && commandResult.command) {
+    localCollectorCommand = commandResult.command;
+    // Parse command to build custom URL: invoicecollector://collect?vendor=X&month=Y&token=Z
+    const vendorMatch = commandResult.command.match(/--vendor=(\S+)/);
+    const monthMatch = commandResult.command.match(/--target-month=(\S+)/);
+    const tokenMatch = commandResult.command.match(/--token=(\S+)/);
+    if (vendorMatch && monthMatch && tokenMatch) {
+      localCollectorUrl = `invoicecollector://collect?vendor=${vendorMatch[1]}&month=${monthMatch[1]}&token=${tokenMatch[1]}`;
+    }
+  }
 
   // Send notification email about pending vendor
   try {
@@ -1693,9 +1709,6 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
       timeZone: 'Asia/Tokyo'
     });
 
-    // TODO: Phase 4 - Replace with VNC link
-    const webAppUrl = ScriptApp.getService().getUrl();
-
     const subject = `[Auto Invoice Collector] ${vendorName} 請求書処理待機中`;
     const body = `${vendorName}の請求書処理が待機中です。
 
@@ -1707,9 +1720,13 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
 - 予定日時: ${dateStr} ${timeStr}
 - ステータス: 待機中
 
-■ 処理方法
-以下のリンクから処理を開始してください:
-${webAppUrl}
+■ ワンクリック実行
+以下のリンクをクリックして処理を開始（要URL Handler設定）:
+${localCollectorUrl || 'URL生成に失敗しました'}
+
+■ 手動実行（上記が動作しない場合）
+ターミナルで以下のコマンドを実行:
+${localCollectorCommand || 'コマンド生成に失敗しました'}
 
 処理を開始すると、ブラウザが表示されCAPTCHA認証を行えます。
 認証後は自動的にOTP処理と請求書ダウンロードが行われます。
