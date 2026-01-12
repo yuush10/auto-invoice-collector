@@ -1686,12 +1686,16 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
 
   if (commandResult.success && commandResult.command) {
     localCollectorCommand = commandResult.command;
-    // Parse command to build custom URL: invoicecollector://collect?vendor=X&month=Y&token=Z
+    // Parse command to build custom URL: invoicecollector://collect?vendor=X&month=Y&token=Z&url=...
     const vendorMatch = commandResult.command.match(/--vendor=(\S+)/);
     const monthMatch = commandResult.command.match(/--target-month=(\S+)/);
     const tokenMatch = commandResult.command.match(/--token=(\S+)/);
+    const urlMatch = commandResult.command.match(/--url=(\S+)/);
     if (vendorMatch && monthMatch && tokenMatch) {
       localCollectorUrl = `invoicecollector://collect?vendor=${vendorMatch[1]}&month=${monthMatch[1]}&token=${tokenMatch[1]}`;
+      if (urlMatch) {
+        localCollectorUrl += `&url=${urlMatch[1]}`;
+      }
     }
   }
 
