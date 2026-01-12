@@ -1100,7 +1100,7 @@ export class WebAppApi {
    * Get the deployment URL for local collector uploads
    * Priority: ScriptApp.getService().getUrl() > Script Properties > @HEAD deployment
    */
-  private getDeploymentUrl(): string {
+  public getDeploymentUrl(): string {
     // Try getting URL from ScriptApp service (works when deployed as Web App)
     try {
       const serviceUrl = ScriptApp.getService().getUrl();

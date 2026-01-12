@@ -678,11 +678,19 @@ function getWebAppApi(): WebAppApi {
 }
 
 /**
- * Web App entry point - serves the review UI
+ * Web App entry point - serves the review UI or handles redirect actions
  */
 function doGet(
-  _e: GoogleAppsScript.Events.DoGet
+  e: GoogleAppsScript.Events.DoGet
 ): GoogleAppsScript.HTML.HtmlOutput {
+  const action = e.parameter?.action;
+
+  // Handle launchCollector redirect (for Gmail compatibility)
+  if (action === 'launchCollector') {
+    return handleLaunchCollectorRedirect(e.parameter);
+  }
+
+  // Default: serve the review UI
   // GAS references files as 'dist/index' when pushed from dist/index.html
   const template = HtmlService.createTemplateFromFile('dist/index');
   const output = template.evaluate();
@@ -693,6 +701,70 @@ function doGet(
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 
   return output;
+}
+
+/**
+ * Handle launchCollector redirect - returns HTML that redirects to invoicecollector:// URL scheme
+ * This is needed because Gmail blocks custom URL schemes, but allows https:// links
+ */
+function handleLaunchCollectorRedirect(
+  params: { [key: string]: string }
+): GoogleAppsScript.HTML.HtmlOutput {
+  const { vendor, month, token, url } = params;
+
+  if (!vendor || !month || !token) {
+    return HtmlService.createHtmlOutput(`
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Error - Invoice Collector</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; text-align: center; padding: 40px; }
+    h1 { color: #e74c3c; }
+  </style>
+</head>
+<body>
+  <h1>パラメータエラー</h1>
+  <p>必要なパラメータ (vendor, month, token) が不足しています。</p>
+</body>
+</html>`);
+  }
+
+  // Build the custom URL scheme
+  let customUrl = `invoicecollector://collect?vendor=${vendor}&month=${month}&token=${token}`;
+  if (url) {
+    customUrl += `&url=${url}`;
+  }
+
+  // Return HTML page that redirects to custom scheme
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Invoice Collector</title>
+  <meta http-equiv="refresh" content="0;url=${customUrl}">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-align: center; padding: 40px; color: #333; }
+    h1 { color: #2c3e50; margin-bottom: 20px; }
+    a { color: #3498db; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .note { color: #7f8c8d; margin-top: 24px; font-size: 14px; }
+    .command { background: #f8f9fa; padding: 16px; border-radius: 8px; margin-top: 16px; font-family: Monaco, Menlo, monospace; font-size: 12px; word-break: break-all; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Invoice Collector を起動中...</h1>
+  <p>自動的にアプリが起動しない場合は、<a href="${customUrl}">こちらをクリック</a>してください。</p>
+  <p class="note">URL Handlerが設定されていない場合は、ターミナルで以下のコマンドを実行してください:</p>
+  <div class="command">cd ~/repos/personal/github.com/auto-invoice-collector/local-collector && node ./bin/collect.js collect --vendor=${vendor} --target-month=${month} --token=${token}${url ? ` --url=${url}` : ''}</div>
+</body>
+</html>`;
+
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('Invoice Collector')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**
@@ -1686,12 +1758,25 @@ function queueVendorForManualProcessing(vendorKey: string, scheduledDate: Date):
 
   if (commandResult.success && commandResult.command) {
     localCollectorCommand = commandResult.command;
-    // Parse command to build custom URL: invoicecollector://collect?vendor=X&month=Y&token=Z
+    // Parse command to build redirect URL (Gmail blocks custom URL schemes like invoicecollector://)
+    // Instead, we use a GAS web endpoint that redirects to the custom scheme
     const vendorMatch = commandResult.command.match(/--vendor=(\S+)/);
     const monthMatch = commandResult.command.match(/--target-month=(\S+)/);
     const tokenMatch = commandResult.command.match(/--token=(\S+)/);
+    const urlMatch = commandResult.command.match(/--url=(\S+)/);
     if (vendorMatch && monthMatch && tokenMatch) {
-      localCollectorUrl = `invoicecollector://collect?vendor=${vendorMatch[1]}&month=${monthMatch[1]}&token=${tokenMatch[1]}`;
+      // Build web redirect URL instead of direct custom URL scheme
+      const deploymentUrl = getWebAppApi().getDeploymentUrl();
+      const params = [
+        `action=launchCollector`,
+        `vendor=${encodeURIComponent(vendorMatch[1])}`,
+        `month=${encodeURIComponent(monthMatch[1])}`,
+        `token=${encodeURIComponent(tokenMatch[1])}`,
+      ];
+      if (urlMatch) {
+        params.push(`url=${encodeURIComponent(urlMatch[1])}`);
+      }
+      localCollectorUrl = `${deploymentUrl}?${params.join('&')}`;
     }
   }
 
