@@ -35,6 +35,7 @@ import {
   YearMonthOption
 } from './types';
 import { AppLogger } from '../utils/logger';
+import { Config } from '../config';
 
 /**
  * List of fields allowed in DraftUpdate for sanitization.
@@ -1128,28 +1129,22 @@ export class WebAppApi {
 
   /**
    * Get or create invoice folder for a specific month
+   * Uses ROOT_FOLDER_ID from Config for consistency with email invoice processing
    */
   private getOrCreateInvoiceFolder(yearMonth: string): GoogleAppsScript.Drive.Folder {
-    try {
-      const props = PropertiesService.getScriptProperties();
-      const rootFolderId = props.getProperty('INVOICE_FOLDER_ID');
-      const rootFolder = rootFolderId
-        ? DriveApp.getFolderById(rootFolderId)
-        : DriveApp.getRootFolder();
+    const rootFolderId = Config.getRootFolderId();
+    const rootFolder = DriveApp.getFolderById(rootFolderId);
 
-      // Parse year and month
-      const [year, month] = yearMonth.split('-');
-      const folderName = `${year}-${month}`;
+    // Parse year and month
+    const [year, month] = yearMonth.split('-');
+    const folderName = `${year}-${month}`;
 
-      // Find or create month folder
-      const folders = rootFolder.getFoldersByName(folderName);
-      if (folders.hasNext()) {
-        return folders.next();
-      }
-
-      return rootFolder.createFolder(folderName);
-    } catch {
-      return DriveApp.getRootFolder();
+    // Find or create month folder
+    const folders = rootFolder.getFoldersByName(folderName);
+    if (folders.hasNext()) {
+      return folders.next();
     }
+
+    return rootFolder.createFolder(folderName);
   }
 }
