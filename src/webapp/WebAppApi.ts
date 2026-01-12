@@ -36,6 +36,7 @@ import {
 } from './types';
 import { AppLogger } from '../utils/logger';
 import { Config } from '../config';
+import { FolderManager } from '../modules/drive/FolderManager';
 
 /**
  * List of fields allowed in DraftUpdate for sanitization.
@@ -95,6 +96,7 @@ export class WebAppApi {
   private promptService: PromptService;
   private journalGenerator: JournalGenerator | null = null;
   private _pendingQueueManager: PendingVendorQueueManager | null = null;
+  private _folderManager: FolderManager | null = null;
 
   constructor(config: WebAppApiConfig) {
     this.draftManager = new DraftSheetManager(config.spreadsheetId);
@@ -102,7 +104,7 @@ export class WebAppApi {
     this.draftHistoryManager = new DraftHistorySheetManager(config.spreadsheetId);
     this.dictHistoryManager = new DictionaryHistorySheetManager(config.spreadsheetId);
     this.promptService = new PromptService({ spreadsheetId: config.spreadsheetId });
-    // Note: pendingQueueManager is lazy-loaded to avoid issues in test environments
+    // Note: pendingQueueManager and folderManager are lazy-loaded to avoid issues in test environments
 
     if (config.geminiApiKey) {
       this.journalGenerator = new JournalGenerator({
@@ -120,6 +122,16 @@ export class WebAppApi {
       this._pendingQueueManager = getPendingVendorQueueManager();
     }
     return this._pendingQueueManager;
+  }
+
+  /**
+   * Get the folder manager (lazy-loaded to avoid PropertiesService in tests)
+   */
+  private get folderManager(): FolderManager {
+    if (!this._folderManager) {
+      this._folderManager = new FolderManager(Config.getRootFolderId());
+    }
+    return this._folderManager;
   }
 
   // ============================================
@@ -1129,22 +1141,10 @@ export class WebAppApi {
 
   /**
    * Get or create invoice folder for a specific month
-   * Uses ROOT_FOLDER_ID from Config for consistency with email invoice processing
+   * Uses FolderManager for recursive search to support nested folder hierarchies
+   * (e.g., ROOT_FOLDER/FY2025/2025-01/)
    */
   private getOrCreateInvoiceFolder(yearMonth: string): GoogleAppsScript.Drive.Folder {
-    const rootFolderId = Config.getRootFolderId();
-    const rootFolder = DriveApp.getFolderById(rootFolderId);
-
-    // Parse year and month
-    const [year, month] = yearMonth.split('-');
-    const folderName = `${year}-${month}`;
-
-    // Find or create month folder
-    const folders = rootFolder.getFoldersByName(folderName);
-    if (folders.hasNext()) {
-      return folders.next();
-    }
-
-    return rootFolder.createFolder(folderName);
+    return this.folderManager.getOrCreateMonthFolder(yearMonth);
   }
 }
