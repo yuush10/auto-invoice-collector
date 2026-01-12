@@ -51,20 +51,65 @@ export class FolderManager {
   }
 
   /**
+   * Search for a folder by name recursively using breadth-first search.
+   * Returns the shallowest match (root > child > grandchild).
+   * @param parentFolder Folder to start searching from
+   * @param folderName Name of the folder to find
+   * @param maxDepth Maximum depth to search (0 = only immediate children)
+   */
+  private searchFolderRecursively(
+    parentFolder: GoogleAppsScript.Drive.Folder,
+    folderName: string,
+    maxDepth: number
+  ): GoogleAppsScript.Drive.Folder | null {
+    // Use BFS to find shallowest match first
+    const queue: { folder: GoogleAppsScript.Drive.Folder; depth: number }[] = [
+      { folder: parentFolder, depth: 0 }
+    ];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+
+      // Check current folder's immediate children for the target
+      const matchingFolders = current.folder.getFoldersByName(folderName);
+      if (matchingFolders.hasNext()) {
+        const found = matchingFolders.next();
+        if (current.depth > 0) {
+          AppLogger.debug(`Found folder "${folderName}" at depth ${current.depth} under "${current.folder.getName()}"`);
+        }
+        return found;
+      }
+
+      // Add children to queue if we haven't reached max depth
+      if (current.depth < maxDepth) {
+        const childFolders = current.folder.getFolders();
+        while (childFolders.hasNext()) {
+          queue.push({ folder: childFolders.next(), depth: current.depth + 1 });
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Get or create a folder by year-month (YYYY-MM)
+   * Searches recursively up to 2 levels deep to support custom folder hierarchies
+   * (e.g., FY2025-12/2025-04/)
    * @param yearMonth Format: YYYY-MM
    */
   getOrCreateMonthFolder(yearMonth: string): GoogleAppsScript.Drive.Folder {
     return this.withRetry(() => {
       const rootFolder = DriveApp.getFolderById(this.rootFolderId);
-      const folders = rootFolder.getFoldersByName(yearMonth);
 
-      if (folders.hasNext()) {
-        const folder = folders.next();
+      // Search recursively up to 2 levels deep (child + grandchild)
+      const existingFolder = this.searchFolderRecursively(rootFolder, yearMonth, 2);
+      if (existingFolder) {
         AppLogger.debug(`Found existing folder: ${yearMonth}`);
-        return folder;
+        return existingFolder;
       }
 
+      // Create at root if not found anywhere
       const newFolder = rootFolder.createFolder(yearMonth);
       AppLogger.info(`Created new folder: ${yearMonth}`);
       return newFolder;
