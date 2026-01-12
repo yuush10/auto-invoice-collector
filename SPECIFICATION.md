@@ -789,9 +789,30 @@ GAS downloadAitemasuInvoices()
 | PDF download | ✅ | Invoice download from billing portal |
 | Gemini OCR integration | ✅ | Metadata extraction |
 
+#### Phase 3.5: Local Collector（6h）- ✅ COMPLETED
+
+For vendors with reCAPTCHA or other browser verification that cannot run in Cloud Run:
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| Local CLI tool | ✅ | local-collector/src/index.ts |
+| Puppeteer browser automation | ✅ | local-collector/src/collector.ts |
+| Canva vendor support | ✅ | local-collector/src/canva.ts |
+| IBJ vendor support | ✅ | local-collector/src/ibj.ts |
+| GAS Web App upload integration | ✅ | local-collector/src/uploader.ts |
+| macOS URL handler | ✅ | local-collector/url-handler/setup.sh |
+| Token-based authentication | ✅ | One-time tokens with 24h expiry |
+
+**Important**: The local-collector is **not published to npm**. Run locally:
+```bash
+cd local-collector
+node ./bin/collect.js collect --vendor=canva --target-month=2025-01 --token=<token> --url=<url>
+```
+
 **Use Cases**:
 - Services requiring portal login to download invoices
 - Automated invoice retrieval from vendor dashboards
+- Vendors with reCAPTCHA protection (Canva, IBJ)
 
 ---
 
