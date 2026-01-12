@@ -930,8 +930,11 @@ export class WebAppApi {
       // Generate one-time token
       const token = this.generateLocalCollectorToken(record.id);
 
+      // Get current deployment URL to ensure token is validated by the same deployment
+      const deploymentUrl = ScriptApp.getService().getUrl();
+
       // Build the command
-      const command = `npx @auto-invoice/local-collector collect --vendor=${record.vendorKey} --target-month=${targetMonth} --token=${token}`;
+      const command = `npx @auto-invoice/local-collector collect --vendor=${record.vendorKey} --target-month=${targetMonth} --token=${token} --url=${deploymentUrl}`;
 
       AppLogger.info(`[WebAppApi] Generated local collector command for: ${id}`);
 
