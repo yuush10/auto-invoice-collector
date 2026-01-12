@@ -346,9 +346,9 @@ export class IBJCollector {
       const filePath = path.join(downloadDir, downloadedFilename);
       const buffer = fs.readFileSync(filePath);
 
-      // Generate proper filename
+      // Generate proper filename (YYYY-MM-ServiceName-DocType format)
       const billingMonth = `${targetMonth.substring(0, 4)}-${targetMonth.substring(4, 6)}`;
-      const filename = `IBJ-請求書-${billingMonth}.pdf`;
+      const filename = `${billingMonth}-IBJ-請求書.pdf`;
 
       // Clean up
       fs.unlinkSync(filePath);
