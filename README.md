@@ -339,6 +339,10 @@ Vendor portal login & invoice download automation:
 - ✅ Phase 3.4: Google Ads vendor implementation
   - Browser automation via Puppeteer
   - Invoice download from billing portal
+- ✅ Phase 3.5: Local Collector for reCAPTCHA-protected vendors
+  - Local browser automation (not Cloud Run)
+  - Canva, IBJ support
+  - URL handler for one-click collection from email links
 
 ### Phase 4 - ✅ Complete
 
@@ -347,6 +351,38 @@ Journal entry auto-generation (Issues #33-#38):
 - ✅ Gemini AI journal suggestions
 - ✅ Review Web App UI
 - ✅ Audit trail for 電子帳簿保存法 compliance
+
+## Local Collector
+
+The `local-collector` is a CLI tool for collecting invoices from vendors that require reCAPTCHA or other browser-based verification that cannot be automated in Cloud Run.
+
+**Note:** The local-collector package is **not published to npm**. It must be run locally from the source directory.
+
+### Running Locally
+
+```bash
+cd local-collector
+
+# Run collection for a vendor
+node ./bin/collect.js collect --vendor=canva --target-month=2025-01 --token=<token> --url=<gas-webapp-url>
+```
+
+### Generating Commands
+
+Commands are generated via the GAS Web App:
+1. Run `testGetLocalCollectorCommand` in Apps Script editor
+2. Copy the generated command from the logs
+3. Run the command in your terminal
+
+### URL Handler (macOS)
+
+For one-click collection from email links:
+```bash
+cd local-collector/url-handler
+./setup.sh
+```
+
+This installs a URL handler that responds to `invoicecollector://` links.
 
 ## Documentation
 

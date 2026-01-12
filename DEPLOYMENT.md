@@ -517,6 +517,67 @@ npm run build && npm run push
 - Cloud Run may not have captured screenshots
 - Check Cloud Run logs for Puppeteer errors
 
+## Phase 3.5: Local Collector Setup
+
+The local-collector is a CLI tool for vendors that require reCAPTCHA or browser-based verification.
+
+**Important:** The local-collector package is **not published to npm**. It must be run locally from the source directory.
+
+### Installation
+
+```bash
+cd local-collector
+npm install
+npm run build
+```
+
+### Testing Local Collector
+
+1. **Generate a test command** in Apps Script editor:
+   - Open: `clasp open`
+   - Run: `testGetLocalCollectorCommand`
+   - View logs to get the command
+
+2. **Run the command locally**:
+   ```bash
+   cd local-collector
+   node ./bin/collect.js collect \
+     --vendor=canva \
+     --target-month=2025-01 \
+     --token=<generated-token> \
+     --url=<gas-webapp-url>
+   ```
+
+3. **Verify the upload**:
+   - Check Google Drive for the uploaded file
+   - Check the Processing Log sheet for the record
+
+### URL Handler Setup (macOS)
+
+For one-click collection from email links:
+
+```bash
+cd local-collector/url-handler
+./setup.sh
+```
+
+This installs a macOS URL handler that responds to `invoicecollector://` links, allowing you to click links in notification emails to trigger collection.
+
+### Troubleshooting Local Collector
+
+**"Invalid or expired token" error:**
+- Ensure the `--url` parameter points to the correct GAS deployment
+- Token expires after 24 hours - generate a new command if needed
+- The URL should match the deployment that generated the token
+
+**"command not found" when using npx:**
+- The package is not published to npm
+- Use `node ./bin/collect.js` instead of `npx @auto-invoice/local-collector`
+
+**Browser doesn't launch:**
+- Ensure Chrome is installed at `/Applications/Google Chrome.app`
+- Check console output for path errors
+
 ## Next Steps
 
 After successful MVP deployment:
