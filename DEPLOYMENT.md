@@ -331,6 +331,40 @@ npm run build
 npm run push
 ```
 
+### Updating Web App Deployment URL
+
+**IMPORTANT:** When you modify `doGet()` or any code that handles web requests (including the email notification redirect), you must create a new Web App deployment and update the `WEBAPP_DEPLOYMENT_URL` Script Property.
+
+`clasp push` only updates the code but does NOT create a new web app deployment. The existing deployment URL will continue to serve the old code until you create a new deployment.
+
+**When to update:**
+- After modifying `doGet()` function
+- After modifying `handleLaunchCollectorRedirect()` or similar web handlers
+- After changing any code that affects the web app behavior
+- When the "処理を開始" button in notification emails stops working
+
+**Steps to update:**
+
+1. Push code changes:
+   ```bash
+   npm run build && clasp push
+   ```
+
+2. Create new Web App deployment in Apps Script editor:
+   - Click **Deploy** → **New deployment**
+   - Select type: **Web app**
+   - Configure:
+     - **Execute as:** Me
+     - **Who has access:** Anyone
+   - Click **Deploy**
+   - Copy the new Web app URL
+
+3. Update Script Property:
+   - Go to **Project Settings** → **Script Properties**
+   - Update `WEBAPP_DEPLOYMENT_URL` with the new URL
+
+4. Test by running `testVendorNotification_Canva()` and clicking the email button
+
 ### Adding New Services
 
 1. Edit `src/config.ts`
