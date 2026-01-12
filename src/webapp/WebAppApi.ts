@@ -931,7 +931,7 @@ export class WebAppApi {
       const token = this.generateLocalCollectorToken(record.id);
 
       // Get current deployment URL to ensure token is validated by the same deployment
-      const deploymentUrl = ScriptApp.getService().getUrl();
+      const deploymentUrl = this.getDeploymentUrl();
 
       // Build the command
       const command = `npx @auto-invoice/local-collector collect --vendor=${record.vendorKey} --target-month=${targetMonth} --token=${token} --url=${deploymentUrl}`;
@@ -1093,6 +1093,37 @@ export class WebAppApi {
     } catch {
       return 'default-secret-for-testing';
     }
+  }
+
+  /**
+   * Get the deployment URL for local collector uploads
+   * Priority: ScriptApp.getService().getUrl() > Script Properties > @HEAD deployment
+   */
+  private getDeploymentUrl(): string {
+    // Try getting URL from ScriptApp service (works when deployed as Web App)
+    try {
+      const serviceUrl = ScriptApp.getService().getUrl();
+      if (serviceUrl) {
+        return serviceUrl;
+      }
+    } catch {
+      // Continue to fallbacks
+    }
+
+    // Try getting URL from Script Properties (can be set manually)
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const storedUrl = props.getProperty('WEBAPP_DEPLOYMENT_URL');
+      if (storedUrl) {
+        return storedUrl;
+      }
+    } catch {
+      // Continue to fallback
+    }
+
+    // Fallback to @HEAD deployment (development deployment)
+    // This ID is from `clasp deployments` - the @HEAD deployment
+    return 'https://script.google.com/macros/s/AKfycbyWUxKaIohF5dCgWsW9UNDW1cvuaRWSRgfRfwDzjJ8/exec';
   }
 
   /**
