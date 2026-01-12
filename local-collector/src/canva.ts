@@ -337,8 +337,8 @@ export class CanvaCollector {
     const filePath = path.join(downloadDir, downloadedFilename);
     const buffer = fs.readFileSync(filePath);
 
-    // Generate proper filename
-    const filename = `Canva-請求書-${targetMonth}.pdf`;
+    // Generate proper filename (YYYY-MM-ServiceName-DocType format)
+    const filename = `${targetMonth}-Canva-請求書.pdf`;
 
     // Clean up
     fs.unlinkSync(filePath);
@@ -362,7 +362,7 @@ export class CanvaCollector {
       });
 
       return {
-        filename: `Canva-billing-${targetMonth}.pdf`,
+        filename: `${targetMonth}-Canva-billing.pdf`,
         data: Buffer.from(buffer),
         mimeType: 'application/pdf',
       };
