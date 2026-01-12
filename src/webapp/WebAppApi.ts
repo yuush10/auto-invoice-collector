@@ -1110,25 +1110,27 @@ export class WebAppApi {
 
   /**
    * Get the deployment URL for local collector uploads
-   * Priority: ScriptApp.getService().getUrl() > Script Properties > @HEAD deployment
+   * Priority: Script Properties > ScriptApp.getService().getUrl() (if not /dev) > fallback
+   * Note: ScriptApp.getService().getUrl() returns /dev URL when running from editor,
+   * so we prioritize the manually configured WEBAPP_DEPLOYMENT_URL.
    */
   public getDeploymentUrl(): string {
-    // Try getting URL from ScriptApp service (works when deployed as Web App)
-    try {
-      const serviceUrl = ScriptApp.getService().getUrl();
-      if (serviceUrl) {
-        return serviceUrl;
-      }
-    } catch {
-      // Continue to fallbacks
-    }
-
-    // Try getting URL from Script Properties (can be set manually)
+    // Priority 1: Try getting URL from Script Properties (explicitly configured)
     try {
       const props = PropertiesService.getScriptProperties();
       const storedUrl = props.getProperty('WEBAPP_DEPLOYMENT_URL');
       if (storedUrl) {
         return storedUrl;
+      }
+    } catch {
+      // Continue to fallbacks
+    }
+
+    // Priority 2: Try ScriptApp service URL (but skip if it's /dev endpoint)
+    try {
+      const serviceUrl = ScriptApp.getService().getUrl();
+      if (serviceUrl && !serviceUrl.endsWith('/dev')) {
+        return serviceUrl;
       }
     } catch {
       // Continue to fallback
