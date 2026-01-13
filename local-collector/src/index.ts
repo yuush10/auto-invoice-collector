@@ -19,6 +19,7 @@ program
   .option('--headless', 'Run in headless mode (not recommended for reCAPTCHA)')
   .option('--no-upload', 'Skip uploading to Google Drive')
   .option('--url <url>', 'GAS Web App URL for upload (ensures token validation by correct deployment)')
+  .option('--debug', 'Enable verbose debug logging with screenshots and element dumps')
   .action(async (options) => {
     const collector = new Collector({
       vendorKey: options.vendor,
@@ -27,6 +28,7 @@ program
       headless: options.headless || false,
       skipUpload: !options.upload,
       gasWebAppUrl: options.url,
+      debug: options.debug || false,
     });
 
     try {

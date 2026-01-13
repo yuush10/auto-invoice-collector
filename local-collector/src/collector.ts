@@ -17,6 +17,7 @@ export interface CollectorOptions {
   headless: boolean;
   skipUpload: boolean;
   gasWebAppUrl?: string;
+  debug?: boolean;
 }
 
 export interface CollectionResult {
@@ -121,6 +122,10 @@ export class Collector {
     const chromePath = this.findChromePath();
     console.log(`Using Chrome at: ${chromePath}`);
 
+    // Get vendor-specific viewport configuration
+    const viewport = this.getVendorViewport();
+    console.log(`Viewport: ${viewport.width}x${viewport.height}`);
+
     // Launch with stealth-friendly options
     // The stealth plugin handles user agent, webdriver flag, etc.
     this.browser = await puppeteer.launch({
@@ -130,13 +135,10 @@ export class Collector {
         '--no-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
-        '--window-size=1440,900',
+        `--window-size=${viewport.width},${viewport.height}`,
         '--start-maximized',
       ],
-      defaultViewport: {
-        width: 1440,
-        height: 900,
-      },
+      defaultViewport: viewport,
       ignoreDefaultArgs: ['--enable-automation'],
     });
 
@@ -145,6 +147,18 @@ export class Collector {
     }
     this.page = await this.browser.newPage();
     // User agent is handled by stealth plugin - no manual override needed
+  }
+
+  private getVendorViewport(): { width: number; height: number } {
+    // Vendor-specific viewport configurations
+    // Some services need larger viewports to display all UI elements
+    const vendorViewports: Record<string, { width: number; height: number }> = {
+      canva: { width: 1920, height: 1080 }, // Canva needs taller viewport for dropdown menus
+      ibj: { width: 1440, height: 900 },    // IBJ works with default size
+    };
+
+    const vendorKey = this.options.vendorKey.toLowerCase();
+    return vendorViewports[vendorKey] || { width: 1440, height: 900 };
   }
 
   private findChromePath(): string {
@@ -184,7 +198,7 @@ export class Collector {
         return await ibjCollector.collect(targetMonth);
 
       case 'canva':
-        const canvaCollector = new CanvaCollector(this.page);
+        const canvaCollector = new CanvaCollector(this.page, this.options.debug || false);
         return await canvaCollector.collect(targetMonth);
 
       default:
