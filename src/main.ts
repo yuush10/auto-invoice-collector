@@ -13,6 +13,7 @@ import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
 import { GeminiOcrService } from './modules/ocr/GeminiOcrService';
 import { FolderManager } from './modules/drive/FolderManager';
 import { FileUploader } from './modules/drive/FileUploader';
+import { DriveInboxProcessor } from './modules/drive/DriveInboxProcessor';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
@@ -2310,3 +2311,112 @@ function debugDraftData(): void {
   Logger.log(`YearMonthOptions: ${JSON.stringify(options)}`);
 }
 (globalThis as any).debugDraftData = debugDraftData;
+
+// ============================================================
+// Drive Inbox Processing Functions
+// ============================================================
+
+/**
+ * Process Drive inbox folder for new files
+ * This function is called by the time-based trigger (every 15 minutes)
+ * Files are renamed using Gemini OCR and moved to appropriate month folders
+ */
+function processInbox(): void {
+  processInboxAsync().catch((error) => {
+    AppLogger.error('Unhandled error in inbox processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([
+        {
+          messageId: 'N/A',
+          serviceName: 'DriveInbox',
+          error: `Unhandled error: ${error}`,
+        },
+      ]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
+}
+(globalThis as any).processInbox = processInbox;
+
+async function processInboxAsync(): Promise<void> {
+  AppLogger.info('Drive Inbox Processing - Starting');
+
+  try {
+    const processor = new DriveInboxProcessor();
+    const result = processor.processInbox();
+
+    AppLogger.info(
+      `Inbox processing complete: ${result.processed} processed, ` +
+        `${result.errors} errors, ${result.skipped} skipped, ` +
+        `${result.unknownKept} kept as unknown`
+    );
+
+    // Send notification if there were errors or unknown files
+    if (result.errors > 0 || result.unknownKept > 0) {
+      const notifier = new Notifier(Config.getAdminEmail());
+
+      // Build needs review list for unknown files
+      const needsReviewItems: string[] = [];
+      if (result.unknownKept > 0) {
+        needsReviewItems.push(
+          `${result.unknownKept} files kept in inbox with '不明-' prefix (need manual review)`
+        );
+      }
+      if (result.errors > 0) {
+        needsReviewItems.push(
+          `${result.errors} files had processing errors (check DriveInboxLog sheet)`
+        );
+      }
+
+      notifier.sendNeedsReviewNotification(needsReviewItems);
+    }
+  } catch (error) {
+    AppLogger.error('Fatal error in inbox processing', error as Error);
+    throw error;
+  }
+}
+
+/**
+ * Manual trigger for testing inbox processing
+ */
+function runInboxManually(): void {
+  processInbox();
+}
+(globalThis as any).runInboxManually = runInboxManually;
+
+/**
+ * Setup trigger for inbox processing (every 15 minutes)
+ */
+function setupInboxTrigger(): void {
+  // Remove existing triggers
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'processInbox') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new trigger every 15 minutes
+  ScriptApp.newTrigger('processInbox').timeBased().everyMinutes(15).create();
+
+  Logger.log('Inbox processing trigger created successfully (every 15 minutes)');
+}
+(globalThis as any).setupInboxTrigger = setupInboxTrigger;
+
+/**
+ * Remove inbox processing trigger
+ */
+function removeInboxTrigger(): void {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  triggers.forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'processInbox') {
+      ScriptApp.deleteTrigger(trigger);
+      removed++;
+    }
+  });
+  Logger.log(`Removed ${removed} inbox processing trigger(s)`);
+}
+(globalThis as any).removeInboxTrigger = removeInboxTrigger;

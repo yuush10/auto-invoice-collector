@@ -142,6 +142,27 @@ GAS ──► Google Drive ──► Gemini API ──► DraftSheet ──► R
                       entries
 ```
 
+#### 4. Drive Inbox Processing (Every 15 Minutes)
+
+```
+User uploads PDF to Inbox folder
+         │
+         ▼
+GAS (processInbox) ──► Cloud Run (/ocr) ──► Google Drive
+         │                   │                   │
+         │                   ▼                   ▼
+         │              Gemini OCR:         If success:
+         │              - service_name       Move to /YYYY-MM/
+         │              - event_month        Rename: YYYY-MM-Name-Type.pdf
+         │              - doc_type
+         │              - confidence       If unknown/low confidence:
+         │                                   Prefix: 不明-
+         │                                   Keep in inbox
+         ▼
+    DriveInboxLog
+    (processing records)
+```
+
 ### Important Notes
 
 - **All processing runs in Google Cloud** - your laptop can be closed
@@ -174,7 +195,7 @@ YYYY-MM-{ServiceName}-{docType}.pdf
 Where:
 - `YYYY-MM`: Event month (e.g., `2025-09`)
 - `{ServiceName}`: Normalized service name (e.g., `Studio`, `IVRy`)
-- `{docType}`: Either `請求書` (invoice) or `領収書` (receipt)
+- `{docType}`: `請求書` (invoice), `領収書` (receipt), or `不明` (unknown)
 
 ### Examples
 
@@ -261,6 +282,18 @@ END IF
 ### Default Behavior
 
 **If neither invoice nor receipt keywords are detected in any of the four sources**, the system defaults to `領収書` (receipt).
+
+### Unknown Document Type
+
+For Drive inbox processing, files may be marked as `不明` (unknown) when:
+- OCR confidence is below threshold (0.7)
+- Event month cannot be extracted
+- OCR processing fails
+
+Files with `不明` type:
+- Are prefixed with `不明-` in their filename
+- Remain in the inbox folder for manual review
+- Are logged in the `DriveInboxLog` sheet
 
 ---
 
@@ -656,15 +689,15 @@ const emailContext = {
 ### Development Plan Overview
 
 ```
-Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)
-──────────────   ──────────────     ──────────────      ──────────────     ──────────────
-雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成
-✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        ✅ COMPLETED       ✅ COMPLETED
+Phase 0 (3h)     Phase 1 (20h)      Phase 2 (12h)       Phase 3 (15h)      Phase 4 (18h)     Phase 5 (8h)
+──────────────   ──────────────     ──────────────      ──────────────     ──────────────    ──────────────
+雛形・基盤        添付PDF処理        本文PDF化           URLダウンロード     仕訳自動生成      Drive Inbox
+✅ COMPLETED     ✅ COMPLETED       ✅ COMPLETED        ✅ COMPLETED       ✅ COMPLETED      ✅ COMPLETED
 
-├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet
-├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         │  ✅ Aitemasu      ├─ Gemini仕訳提案
-└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  ✅ IBJ           ├─ ReviewWebApp
-                 └─ 二重処理防止                        │  ✅ Google Ads    └─ 変更履歴管理
+├─ clasp設定     ├─ Gmail検索       ├─ Cloud Run構築    ├─ ベンダー別ログイン ├─ DraftSheet     ├─ InboxProcessor
+├─ 台帳Sheet     ├─ Gemini OCR      ├─ HTML→PDF         │  ✅ Aitemasu      ├─ Gemini仕訳提案  ├─ Cloud Run /ocr
+└─ Trigger導入   ├─ Drive格納       └─ GAS連携          │  ✅ IBJ           ├─ ReviewWebApp   ├─ DriveInboxLog
+                 └─ 二重処理防止                        │  ✅ Google Ads    └─ 変更履歴管理   └─ 不明タイプ対応
                                                        ├─ Secret Manager
                                                        └─ Gemini OCR連携
 ```
@@ -886,15 +919,56 @@ node ./bin/collect.js collect --vendor=canva --target-month=2025-01 --token=<tok
 
 ---
 
+### Phase 5: Drive Inbox Processing（8h）- ✅ COMPLETED
+
+**Status**: Production-ready with Cloud Run OCR integration
+
+#### Phase 5.1: Core Infrastructure
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| DriveInboxProcessor | ✅ | src/modules/drive/DriveInboxProcessor.ts |
+| DriveInboxLogger | ✅ | src/modules/logging/DriveInboxLogger.ts |
+| DriveFileRenamer | ✅ | src/modules/drive/DriveFileRenamer.ts |
+| GAS entry points | ✅ | processInbox, runInboxManually, setupInboxTrigger |
+
+#### Phase 5.2: Cloud Run OCR Endpoint
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| OCR-only endpoint | ✅ | cloud-run/src/routes/ocr.ts |
+| FileNamingService cleanup | ✅ | Removed from Cloud Run (GAS only) |
+
+#### Phase 5.3: Unified Naming Strategy
+
+| タスク | 状態 | 成果物 |
+|---|---|---|
+| VendorConfig displayName | ✅ | src/config.ts |
+| generateForVendor() | ✅ | src/modules/naming/FileNamingService.ts |
+| Unknown (不明) type support | ✅ | src/utils/docTypeDetector.ts |
+
+**Features**:
+- Time-based trigger (every 15 minutes)
+- Cloud Run OCR for metadata extraction
+- Unified file naming across all processing types
+- `不明` (unknown) document type for unrecognizable files
+- Files kept in inbox with prefix for manual review
+
+**Phase 5 完了条件**: ✅ Drive inbox files automatically renamed and organized, with unified naming strategy
+
+---
+
 ## Production Status
 
 ### ✅ Currently Working
 - Gmail attachment-based invoice collection (8+ services)
 - **Email body to PDF conversion** via Cloud Run (Phase 2)
-- Automatic document type detection (請求書/領収書)
+- **Drive inbox file processing** with Cloud Run OCR (Phase 5)
+- Automatic document type detection (請求書/領収書/不明)
 - Monthly folder organization in Google Drive
 - Duplicate prevention via ProcessingLog
 - Daily automated processing at 6 AM
+- Inbox processing every 15 minutes
 - Email notifications for errors
 - Pre-validation to skip non-invoice emails
 - **Journal entry auto-generation** via Gemini AI (Phase 4)

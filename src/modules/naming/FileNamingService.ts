@@ -5,6 +5,7 @@
 import { DocumentType } from '../../types';
 import { AppLogger } from '../../utils/logger';
 import { DocTypeDetector } from '../../utils/docTypeDetector';
+import { Config } from '../../config';
 
 export class FileNamingService {
   // Service name mapping for normalization
@@ -16,7 +17,7 @@ export class FileNamingService {
 
   /**
    * Generate file name from event month, document type, and service name
-   * Format: YYYY-MM-ServiceName-{請求書|領収書}.pdf
+   * Format: YYYY-MM-ServiceName-{請求書|領収書|不明}.pdf
    */
   generate(serviceName: string, eventMonth: string, docType: DocumentType): string {
     try {
@@ -31,6 +32,19 @@ export class FileNamingService {
       AppLogger.error('Error generating file name', error as Error);
       throw error;
     }
+  }
+
+  /**
+   * Generate filename for known vendor (rule-based, no OCR required)
+   * Uses vendor configuration for displayName and defaultDocType
+   */
+  generateForVendor(vendorKey: string, eventMonth: string, docType?: DocumentType): string {
+    const vendor = Config.getVendorByKey(vendorKey);
+    if (!vendor) {
+      throw new Error(`Unknown vendor: ${vendorKey}`);
+    }
+    const finalDocType = docType || vendor.defaultDocType;
+    return this.generate(vendor.displayName, eventMonth, finalDocType);
   }
 
   /**

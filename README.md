@@ -7,10 +7,11 @@ Automatically collect invoices and receipts from Gmail and organize them in Goog
 This system automatically:
 - Searches Gmail for invoice/receipt emails
 - Extracts PDF attachments or **converts email body to PDF** (via Cloud Run)
+- **Processes PDF files uploaded to Drive inbox folder** (via Cloud Run OCR)
 - Uses Gemini API for OCR to extract service name and billing month
-- **Detects document type** (請求書/invoice or 領収書/receipt) with priority-based keyword matching
+- **Detects document type** (請求書/invoice, 領収書/receipt, or 不明/unknown) with priority-based keyword matching
 - Organizes files in Google Drive by year-month (YYYY-MM format)
-- Names files as `YYYY-MM-ServiceName-{請求書|領収書}.pdf`
+- Names files as `YYYY-MM-ServiceName-{請求書|領収書|不明}.pdf`
 - Logs all processing in Google Sheets with duplicate detection
 
 ## Technology Stack
@@ -137,6 +138,7 @@ Before deploying, you need to set up Script Properties:
    - `ADMIN_EMAIL`: Email for error notifications
    - `CLOUD_RUN_URL`: Cloud Run service URL for email-to-pdf
    - `INVOKER_SERVICE_ACCOUNT`: Service account for Cloud Run invocation
+   - `INBOX_FOLDER_ID`: Google Drive folder ID for inbox (files to be processed)
 
 Alternatively, run the setup functions in the Apps Script editor.
 
@@ -149,6 +151,21 @@ For email body to PDF conversion:
    - Cloud Run deployment
    - IAM service account setup
    - Script Properties configuration
+
+### Drive Inbox Configuration
+
+For processing PDF files uploaded directly to Google Drive:
+
+1. Create an "inbox" folder in Google Drive for file uploads
+2. Copy the folder ID from the URL
+3. Add `INBOX_FOLDER_ID` to Script Properties
+4. Run `setupInboxTrigger()` in Apps Script editor to enable automatic processing (every 15 minutes)
+
+**How it works:**
+- Upload PDF files to the inbox folder
+- The system processes them every 15 minutes using Cloud Run OCR
+- Successfully processed files are renamed and moved to the appropriate year-month folder
+- Files that cannot be identified are prefixed with `不明-` and kept in the inbox for manual review
 
 ## First Deployment
 
@@ -351,6 +368,15 @@ Journal entry auto-generation (Issues #33-#38):
 - ✅ Gemini AI journal suggestions
 - ✅ Review Web App UI
 - ✅ Audit trail for 電子帳簿保存法 compliance
+
+### Phase 5 - ✅ Complete
+
+Drive inbox file processing (Issue #134):
+- ✅ Process PDF files uploaded to Drive inbox folder
+- ✅ Cloud Run OCR integration for metadata extraction
+- ✅ Unified file naming across all processing types
+- ✅ `不明` (unknown) document type support
+- ✅ Time-based trigger (every 15 minutes)
 
 ## Local Collector
 

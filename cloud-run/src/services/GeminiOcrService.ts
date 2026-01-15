@@ -216,47 +216,13 @@ export class DocTypeDetector {
         return '領収書';
       case 'invoice':
         return '請求書';
+      case 'unknown':
+        return '不明';
       default:
-        return '領収書';
+        return '不明';
     }
   }
 }
 
-/**
- * File naming service
- */
-export class FileNamingService {
-  private static readonly SERVICE_NAME_MAPPING: { [key: string]: string } = {
-    'Personal 月額': 'Studio',
-    '電話自動応答サービスIVRy': 'IVRy',
-    'IVRy 電話自動応答サービス': 'IVRy',
-    'Aitemasu': 'Aitemasu',
-  };
-
-  /**
-   * Generate file name from event month, document type, and service name
-   * Format: YYYY-MM-ServiceName-{請求書|領収書}.pdf
-   */
-  generate(serviceName: string, eventMonth: string, docType: DocumentType): string {
-    const docTypeString = DocTypeDetector.getDocTypeString(docType);
-    const normalizedName = this.normalizeServiceName(serviceName);
-    const fileName = `${eventMonth}-${normalizedName}-${docTypeString}.pdf`;
-
-    console.log(`[FileNaming] Generated file name: ${fileName}`);
-
-    return fileName;
-  }
-
-  /**
-   * Normalize service name for file naming
-   */
-  private normalizeServiceName(name: string): string {
-    let normalized = FileNamingService.SERVICE_NAME_MAPPING[name] || name;
-    normalized = normalized.replace(/[\\/:*?"<>|]/g, '_');
-    normalized = normalized.trim();
-    if (normalized.length > 40) {
-      normalized = normalized.substring(0, 40);
-    }
-    return normalized;
-  }
-}
+// Note: FileNamingService has been removed from Cloud Run
+// Filename generation is handled by GAS FileNamingService for consistency
