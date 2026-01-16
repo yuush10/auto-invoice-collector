@@ -16,6 +16,7 @@ Run these checks before any commit:
 2. Jest tests
 3. Anti-pattern detection
 4. Bundle build verification
+5. GAS export validation
 
 ## Step 1: TypeScript Compilation
 
@@ -59,6 +60,30 @@ npm run build
 ```
 
 Verify `dist/bundle.js` is generated without errors.
+
+## Step 5: GAS Export Validation
+
+Verify all globalThis exports have footer declarations (macOS-compatible):
+
+```bash
+# Extract exports and footer functions, compare
+EXPORTS=$(find src -name "*.ts" -exec grep -h '(globalThis as any)\.' {} + 2>/dev/null | \
+  sed -n 's/.*(\globalThis as any)\.\([a-zA-Z_][a-zA-Z0-9_]*\) =.*/\1/p' | sort -u)
+FOOTER=$(grep -E '^function [a-zA-Z_][a-zA-Z0-9_]*\(' rollup.config.mjs | \
+  sed -n 's/^function \([a-zA-Z_][a-zA-Z0-9_]*\)(.*/\1/p' | sort -u)
+
+# Find missing (in exports but not in footer)
+MISSING=$(comm -23 <(echo "$EXPORTS") <(echo "$FOOTER"))
+
+if [ -n "$MISSING" ]; then
+  echo "✗ Missing from rollup footer:"
+  echo "$MISSING"
+  exit 1
+fi
+echo "✓ GAS exports synced"
+```
+
+If missing functions found, see `/gas-export-check` for fix suggestions.
 
 ## Results Summary
 
