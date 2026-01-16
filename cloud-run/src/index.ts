@@ -6,6 +6,7 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import convertRouter from './routes/convert';
 import downloadRouter from './routes/download';
 import interactiveRouter from './routes/interactive';
+import ocrRouter from './routes/ocr';
 import { getVncSessionManager } from './services/VncSessionManager';
 
 const app = express();
@@ -72,6 +73,7 @@ app.use('/vnc', vncAuthMiddleware, vncProxy);
 app.use('/', convertRouter);
 app.use('/', downloadRouter);
 app.use('/', interactiveRouter);
+app.use('/', ocrRouter);
 
 // Create HTTP server to handle websocket upgrades
 const server = http.createServer(app);
@@ -108,7 +110,7 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(port, () => {
   console.log(`[SERVER] Invoice Automation Service listening on port ${port}`);
   console.log(`[SERVER] Environment: ${process.env.NODE_ENV || 'production'}`);
-  console.log(`[SERVER] Available endpoints: /convert, /download, /interactive, /vnc, /health`);
+  console.log(`[SERVER] Available endpoints: /convert, /download, /interactive, /ocr, /vnc, /health`);
 });
 
 // Graceful shutdown

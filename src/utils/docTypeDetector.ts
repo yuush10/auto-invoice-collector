@@ -135,8 +135,10 @@ export class DocTypeDetector {
         return '領収書';
       case 'invoice':
         return '請求書';
+      case 'unknown':
+        return '不明';
       default:
-        return '領収書'; // Default
+        return '不明';
     }
   }
 

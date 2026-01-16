@@ -25,7 +25,6 @@ import { GoogleAdsVendor } from '../vendors/GoogleAdsVendor';
 import {
   GeminiOcrService,
   DocTypeDetector,
-  FileNamingService,
   DocumentType,
 } from '../services/GeminiOcrService';
 
@@ -513,7 +512,6 @@ router.post('/download', async (req: Request, res: Response) => {
     if (geminiApiKey && files.length > 0) {
       log('Processing files with OCR for metadata extraction...');
       const ocrService = new GeminiOcrService(geminiApiKey);
-      const fileNamingService = new FileNamingService();
 
       for (const file of files) {
         try {
@@ -532,21 +530,13 @@ router.post('/download', async (req: Request, res: Response) => {
           });
 
           // Update file metadata
+          // Note: suggestedFilename is NOT generated here
+          // Filename generation is handled by GAS FileNamingService for consistency
           file.serviceName = extracted.serviceName;
           file.billingMonth = extracted.eventMonth;
           file.documentType = docType;
           file.ocrConfidence = extracted.confidence;
           file.ocrNotes = extracted.notes;
-
-          // Generate suggested filename
-          if (extracted.eventMonth && extracted.serviceName) {
-            file.suggestedFilename = fileNamingService.generate(
-              extracted.serviceName,
-              extracted.eventMonth,
-              docType
-            );
-            log(`Suggested filename: ${file.suggestedFilename}`);
-          }
 
           log(`OCR complete: ${extracted.serviceName} (${extracted.eventMonth}) - ${docType}`);
         } catch (ocrError) {

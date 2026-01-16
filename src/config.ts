@@ -2,6 +2,8 @@
  * Configuration and service definitions
  */
 
+import { DocumentType } from './types';
+
 export type ExtractionType = 'attachment' | 'body' | 'url';
 
 export interface ServiceConfig {
@@ -18,8 +20,12 @@ export interface ServiceConfig {
 export interface VendorConfig {
   /** Unique vendor identifier */
   vendorKey: string;
-  /** Vendor display name */
+  /** Vendor display name (for UI) */
   vendorName: string;
+  /** Display name for file naming (e.g., "IBJ", "Canva") */
+  displayName: string;
+  /** Default document type for this vendor */
+  defaultDocType: DocumentType;
   /** Domain patterns for URL matching */
   domainPatterns: string[];
   /** URL pattern for more specific matching */
@@ -130,6 +136,8 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
   {
     vendorKey: 'ibj',
     vendorName: 'IBJ',
+    displayName: 'IBJ',
+    defaultDocType: 'invoice',
     domainPatterns: ['ibjapan.com'],
     loginRequired: true,
     portalUrl: 'https://www.ibjapan.com/div/logins',
@@ -137,6 +145,8 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
   {
     vendorKey: 'aitemasu',
     vendorName: 'Aitemasu',
+    displayName: 'Aitemasu',
+    defaultDocType: 'invoice',
     domainPatterns: ['aitemasu.me'],
     loginRequired: true,
     portalUrl: 'https://app.aitemasu.me/',
@@ -144,6 +154,8 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
   {
     vendorKey: 'google-ads',
     vendorName: 'Google Ads',
+    displayName: 'GoogleAds',
+    defaultDocType: 'invoice',
     domainPatterns: ['ads.google.com'],
     urlPattern: /ads\.google\.com\/aw\/billing/,
     loginRequired: true,
@@ -153,6 +165,8 @@ export const VENDOR_CONFIGS: VendorConfig[] = [
   {
     vendorKey: 'canva',
     vendorName: 'Canva',
+    displayName: 'Canva',
+    defaultDocType: 'invoice',
     domainPatterns: ['canva.com'],
     loginRequired: true,
     specialHandling: 'oauth',
@@ -228,5 +242,20 @@ export class Config {
       const runtimeUrl = ScriptApp.getService().getUrl();
       return runtimeUrl || 'Web App URL not configured';
     }
+  }
+
+  /**
+   * Get inbox folder ID for Drive inbox processing
+   * Files uploaded to this folder will be automatically renamed and organized
+   */
+  static getInboxFolderId(): string {
+    return this.getProperty('INBOX_FOLDER_ID');
+  }
+
+  /**
+   * Get vendor configuration by vendor key
+   */
+  static getVendorByKey(vendorKey: string): VendorConfig | undefined {
+    return VENDOR_CONFIGS.find(v => v.vendorKey === vendorKey);
   }
 }

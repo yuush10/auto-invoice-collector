@@ -112,6 +112,7 @@ Add the following properties:
 | `ROOT_FOLDER_ID` | Folder ID from Step 3.1 | Google Drive folder for storing invoices |
 | `LOG_SHEET_ID` | Sheet ID from Step 3.2 | Google Sheets for processing logs |
 | `ADMIN_EMAIL` | Your email address | Email for error notifications |
+| `INBOX_FOLDER_ID` | Inbox folder ID | Google Drive folder for file uploads (optional, for Drive inbox feature) |
 
 **Example:**
 ```
@@ -611,6 +612,60 @@ This installs a macOS URL handler that responds to `invoicecollector://` links, 
 **Browser doesn't launch:**
 - Ensure Chrome is installed at `/Applications/Google Chrome.app`
 - Check console output for path errors
+
+## Phase 5: Drive Inbox Processing
+
+The Drive inbox feature allows you to upload PDF files directly to Google Drive for automatic processing.
+
+### Setup
+
+1. **Create inbox folder** in Google Drive (or use an existing folder)
+2. **Copy folder ID** from the URL:
+   ```
+   https://drive.google.com/drive/folders/FOLDER_ID_HERE
+   ```
+3. **Add Script Property**:
+   - Property: `INBOX_FOLDER_ID`
+   - Value: Your inbox folder ID
+
+4. **Set up the trigger** in Apps Script editor:
+   ```javascript
+   // Run once to create the trigger
+   setupInboxTrigger()
+   ```
+   This creates a time-based trigger that runs every 15 minutes.
+
+### Testing Drive Inbox
+
+1. **Upload a PDF** to your inbox folder
+2. **Run manually** (or wait for trigger):
+   ```javascript
+   runInboxManually()
+   ```
+3. **Check results**:
+   - Successfully processed files are renamed and moved to year-month folders
+   - Unknown files are prefixed with `不明-` and kept in inbox
+   - Check `DriveInboxLog` sheet for processing records
+
+### Document Types
+
+The system supports three document types:
+- `請求書` (invoice) - detected by keyword matching
+- `領収書` (receipt) - detected by keyword matching
+- `不明` (unknown) - used when OCR confidence is low or extraction fails
+
+Files marked as `不明` require manual review:
+1. Open the file in the inbox folder
+2. Manually rename with correct format: `YYYY-MM-ServiceName-{請求書|領収書}.pdf`
+3. Move to the appropriate year-month folder
+
+### Removing the Trigger
+
+To disable automatic inbox processing:
+```javascript
+// Run in Apps Script editor
+removeInboxTrigger()
+```
 
 ## Next Steps
 

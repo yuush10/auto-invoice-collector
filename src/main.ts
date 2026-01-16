@@ -13,6 +13,7 @@ import { EmailBodyExtractor } from './modules/gmail/EmailBodyExtractor';
 import { GeminiOcrService } from './modules/ocr/GeminiOcrService';
 import { FolderManager } from './modules/drive/FolderManager';
 import { FileUploader } from './modules/drive/FileUploader';
+import { DriveInboxProcessor } from './modules/drive/DriveInboxProcessor';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
 import { Notifier } from './modules/notifications/Notifier';
@@ -2310,3 +2311,247 @@ function debugDraftData(): void {
   Logger.log(`YearMonthOptions: ${JSON.stringify(options)}`);
 }
 (globalThis as any).debugDraftData = debugDraftData;
+
+// ============================================================
+// Drive Inbox Processing Functions
+// ============================================================
+
+/**
+ * Process Drive inbox folder for new files
+ * This function is called by the time-based trigger (every 15 minutes)
+ * Files are renamed using Gemini OCR and moved to appropriate month folders
+ */
+function processInbox(): void {
+  processInboxAsync().catch((error) => {
+    AppLogger.error('Unhandled error in inbox processing', error as Error);
+    try {
+      const notifier = new Notifier(Config.getAdminEmail());
+      notifier.sendErrorNotification([
+        {
+          messageId: 'N/A',
+          serviceName: 'DriveInbox',
+          error: `Unhandled error: ${error}`,
+        },
+      ]);
+    } catch (notifyError) {
+      AppLogger.error('Failed to send error notification', notifyError as Error);
+    }
+  });
+}
+(globalThis as any).processInbox = processInbox;
+
+async function processInboxAsync(): Promise<void> {
+  AppLogger.info('Drive Inbox Processing - Starting');
+
+  try {
+    const processor = new DriveInboxProcessor();
+    const result = processor.processInbox();
+
+    AppLogger.info(
+      `Inbox processing complete: ${result.processed} processed, ` +
+        `${result.errors} errors, ${result.skipped} skipped, ` +
+        `${result.unknownKept} kept as unknown`
+    );
+
+    // Send notification if there were errors or unknown files
+    if (result.errors > 0 || result.unknownKept > 0) {
+      const notifier = new Notifier(Config.getAdminEmail());
+
+      // Build needs review list for unknown files
+      const needsReviewItems: string[] = [];
+      if (result.unknownKept > 0) {
+        needsReviewItems.push(
+          `${result.unknownKept} files kept in inbox with '不明-' prefix (need manual review)`
+        );
+      }
+      if (result.errors > 0) {
+        needsReviewItems.push(
+          `${result.errors} files had processing errors (check DriveInboxLog sheet)`
+        );
+      }
+
+      notifier.sendNeedsReviewNotification(needsReviewItems);
+    }
+  } catch (error) {
+    AppLogger.error('Fatal error in inbox processing', error as Error);
+    throw error;
+  }
+}
+
+/**
+ * Manual trigger for testing inbox processing
+ */
+function runInboxManually(): void {
+  processInbox();
+}
+(globalThis as any).runInboxManually = runInboxManually;
+
+/**
+ * Debug function to test OCR on a specific file in inbox
+ * Run this to see exactly what the OCR is returning
+ */
+function debugInboxOcr(): void {
+  const inboxFolderId = Config.getInboxFolderId();
+  // Use email-to-pdf service which has the /ocr endpoint
+  const cloudRunUrl = Config.getCloudRunUrl();
+
+  Logger.log(`=== Debug Inbox OCR ===`);
+  Logger.log(`Inbox Folder ID: ${inboxFolderId}`);
+  Logger.log(`Cloud Run URL: ${cloudRunUrl}`);
+
+  const inboxFolder = DriveApp.getFolderById(inboxFolderId);
+  const files = inboxFolder.getFiles();
+
+  // Find first PDF file
+  let file: GoogleAppsScript.Drive.File | null = null;
+  while (files.hasNext()) {
+    const f = files.next();
+    const name = f.getName();
+    const mime = f.getMimeType();
+    if (name.toLowerCase().endsWith('.pdf') || mime === 'application/pdf') {
+      file = f;
+      break;
+    }
+    Logger.log(`Skipping non-PDF: ${name} (${mime})`);
+  }
+
+  if (!file) {
+    Logger.log('No PDF files in inbox folder');
+    return;
+  }
+
+  const filename = file.getName();
+  const mimeType = file.getMimeType();
+
+  Logger.log(`\nProcessing file: ${filename}`);
+  Logger.log(`MIME type: ${mimeType}`);
+
+  // Get PDF blob and convert to base64
+  const pdfBlob = file.getBlob();
+  const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+  Logger.log(`PDF size (base64): ${pdfBase64.length} chars`);
+
+  // Get ID token (with fallback to service account)
+  let idToken = ScriptApp.getIdentityToken();
+  Logger.log(`Has identity token from ScriptApp: ${!!idToken}`);
+
+  if (!idToken) {
+    // Fallback to service account
+    Logger.log('Using service account fallback for auth...');
+    const serviceAccount = Config.getInvokerServiceAccount();
+    Logger.log(`Service account: ${serviceAccount}`);
+
+    const oauthToken = ScriptApp.getOAuthToken();
+    const iamUrl = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:generateIdToken`;
+
+    try {
+      const iamResponse = UrlFetchApp.fetch(iamUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          Authorization: `Bearer ${oauthToken}`,
+        },
+        payload: JSON.stringify({
+          audience: cloudRunUrl,
+          includeEmail: true,
+        }),
+        muteHttpExceptions: true,
+      });
+
+      const iamStatus = iamResponse.getResponseCode();
+      if (iamStatus === 200) {
+        const iamResult = JSON.parse(iamResponse.getContentText());
+        idToken = iamResult.token;
+        Logger.log('Got ID token from service account');
+      } else {
+        Logger.log(`IAM request failed: ${iamStatus} - ${iamResponse.getContentText()}`);
+        return;
+      }
+    } catch (iamError) {
+      Logger.log(`IAM error: ${iamError}`);
+      return;
+    }
+  }
+
+  // Call Cloud Run OCR
+  const url = `${cloudRunUrl}/ocr`;
+  Logger.log(`\nCalling OCR endpoint: ${url}`);
+
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        pdfBase64,
+        context: { filename },
+      }),
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      muteHttpExceptions: true,
+    });
+
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    Logger.log(`\nResponse status: ${statusCode}`);
+    Logger.log(`Response body: ${responseText}`);
+
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      Logger.log(`\n=== OCR Result ===`);
+      Logger.log(`Service Name: ${result.serviceName}`);
+      Logger.log(`Event Month: ${result.eventMonth}`);
+      Logger.log(`Doc Type: ${result.docType}`);
+      Logger.log(`Confidence: ${result.confidence}`);
+      Logger.log(`Has Invoice in Content: ${result.hasInvoiceInContent}`);
+      Logger.log(`Has Receipt in Content: ${result.hasReceiptInContent}`);
+      Logger.log(`Notes: ${result.notes}`);
+
+      // Check thresholds
+      const CONFIDENCE_THRESHOLD = 0.7;
+      Logger.log(`\n=== Threshold Check ===`);
+      Logger.log(`Confidence >= ${CONFIDENCE_THRESHOLD}: ${result.confidence >= CONFIDENCE_THRESHOLD}`);
+      Logger.log(`Event Month present: ${!!result.eventMonth}`);
+      Logger.log(`Would be marked as unknown: ${result.confidence < CONFIDENCE_THRESHOLD || !result.eventMonth}`);
+    }
+  } catch (error) {
+    Logger.log(`\nError calling OCR: ${error}`);
+  }
+}
+(globalThis as any).debugInboxOcr = debugInboxOcr;
+
+/**
+ * Setup trigger for inbox processing (every 15 minutes)
+ */
+function setupInboxTrigger(): void {
+  // Remove existing triggers
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'processInbox') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new trigger every 15 minutes
+  ScriptApp.newTrigger('processInbox').timeBased().everyMinutes(15).create();
+
+  Logger.log('Inbox processing trigger created successfully (every 15 minutes)');
+}
+(globalThis as any).setupInboxTrigger = setupInboxTrigger;
+
+/**
+ * Remove inbox processing trigger
+ */
+function removeInboxTrigger(): void {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  triggers.forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'processInbox') {
+      ScriptApp.deleteTrigger(trigger);
+      removed++;
+    }
+  });
+  Logger.log(`Removed ${removed} inbox processing trigger(s)`);
+}
+(globalThis as any).removeInboxTrigger = removeInboxTrigger;
