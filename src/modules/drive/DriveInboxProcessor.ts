@@ -52,7 +52,7 @@ export class DriveInboxProcessor {
     this.namingService = new FileNamingService();
     this.logger = new DriveInboxLogger(Config.getLogSheetId());
     this.inboxFolderId = Config.getInboxFolderId();
-    this.cloudRunOcrUrl = Config.getCloudRunUrl();
+    this.cloudRunOcrUrl = Config.getVendorCloudRunUrl();
   }
 
   /**
