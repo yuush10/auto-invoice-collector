@@ -3,6 +3,7 @@
  */
 
 import { ProcessingError, ProcessingResult, VendorAuthNotification } from '../../types';
+import { InboxProcessingSummary } from '../logging/DriveInboxLogger';
 import { AppLogger } from '../../utils/logger';
 
 export class Notifier {
@@ -62,6 +63,24 @@ export class Notifier {
       AppLogger.info(`Sent processing summary to ${this.adminEmail}`);
     } catch (error) {
       AppLogger.error('Error sending processing summary', error as Error);
+    }
+  }
+
+  /**
+   * Send combined processing summary with inbox data
+   */
+  sendProcessingSummaryWithInbox(
+    result: ProcessingResult,
+    inboxSummary: InboxProcessingSummary
+  ): void {
+    try {
+      const subject = `[Auto Invoice Collector] Daily Processing Summary`;
+      const body = this.formatSummaryReportWithInbox(result, inboxSummary);
+
+      GmailApp.sendEmail(this.adminEmail, subject, body);
+      AppLogger.info(`Sent combined processing summary to ${this.adminEmail}`);
+    } catch (error) {
+      AppLogger.error('Error sending combined processing summary', error as Error);
     }
   }
 
@@ -178,6 +197,73 @@ export class Notifier {
       result.needsReview.forEach((item, index) => {
         report += `  ${index + 1}. ${item}\n`;
       });
+    }
+
+    return report;
+  }
+
+  /**
+   * Format combined summary report with inbox data
+   */
+  private formatSummaryReportWithInbox(
+    result: ProcessingResult,
+    inboxSummary: InboxProcessingSummary
+  ): string {
+    let report = 'Auto Invoice Collector - Daily Processing Summary\n\n';
+
+    // Email Processing Section
+    report += '=== Email Processing ===\n';
+    report += `Total Processed: ${result.processed}\n`;
+    report += `Errors: ${result.errors.length}\n`;
+    report += `Needs Review: ${result.needsReview.length}\n\n`;
+
+    // Drive Inbox Processing Section
+    report += '=== Drive Inbox Processing (24h) ===\n';
+    report += `Total Processed: ${inboxSummary.processed}\n`;
+    report += `Errors: ${inboxSummary.errors}\n`;
+    report += `Skipped (non-PDF): ${inboxSummary.skipped}\n`;
+    report += `Unknown/Low Confidence: ${inboxSummary.unknownKept}\n\n`;
+
+    // Combined Errors
+    const totalErrors = result.errors.length + inboxSummary.errors;
+    if (totalErrors > 0) {
+      report += '=== Errors ===\n';
+
+      if (result.errors.length > 0) {
+        report += 'Email Processing Errors:\n';
+        result.errors.forEach((err, index) => {
+          report += `  ${index + 1}. ${err.serviceName} - ${err.error}\n`;
+        });
+      }
+
+      if (inboxSummary.errorRecords.length > 0) {
+        report += 'Drive Inbox Errors:\n';
+        inboxSummary.errorRecords.forEach((record, index) => {
+          report += `  ${index + 1}. ${record.originalFileName} - ${record.errorMessage || 'Unknown error'}\n`;
+        });
+      }
+      report += '\n';
+    }
+
+    // Combined Needs Review
+    const totalNeedsReview = result.needsReview.length + inboxSummary.unknownKept;
+    if (totalNeedsReview > 0) {
+      report += '=== Needs Review ===\n';
+
+      if (result.needsReview.length > 0) {
+        report += 'Email Processing:\n';
+        result.needsReview.forEach((item, index) => {
+          report += `  ${index + 1}. ${item}\n`;
+        });
+      }
+
+      if (inboxSummary.unknownRecords.length > 0) {
+        report += 'Drive Inbox (unknown/low confidence):\n';
+        inboxSummary.unknownRecords.forEach((record, index) => {
+          const confidence = record.confidence !== undefined ? ` (${Math.round(record.confidence * 100)}%)` : '';
+          report += `  ${index + 1}. ${record.originalFileName}${confidence}\n`;
+        });
+      }
     }
 
     return report;
