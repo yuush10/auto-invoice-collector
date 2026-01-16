@@ -2387,6 +2387,141 @@ function runInboxManually(): void {
 (globalThis as any).runInboxManually = runInboxManually;
 
 /**
+ * Debug function to test OCR on a specific file in inbox
+ * Run this to see exactly what the OCR is returning
+ */
+function debugInboxOcr(): void {
+  const inboxFolderId = Config.getInboxFolderId();
+  // Use email-to-pdf service which has the /ocr endpoint
+  const cloudRunUrl = Config.getCloudRunUrl();
+
+  Logger.log(`=== Debug Inbox OCR ===`);
+  Logger.log(`Inbox Folder ID: ${inboxFolderId}`);
+  Logger.log(`Cloud Run URL: ${cloudRunUrl}`);
+
+  const inboxFolder = DriveApp.getFolderById(inboxFolderId);
+  const files = inboxFolder.getFiles();
+
+  // Find first PDF file
+  let file: GoogleAppsScript.Drive.File | null = null;
+  while (files.hasNext()) {
+    const f = files.next();
+    const name = f.getName();
+    const mime = f.getMimeType();
+    if (name.toLowerCase().endsWith('.pdf') || mime === 'application/pdf') {
+      file = f;
+      break;
+    }
+    Logger.log(`Skipping non-PDF: ${name} (${mime})`);
+  }
+
+  if (!file) {
+    Logger.log('No PDF files in inbox folder');
+    return;
+  }
+
+  const filename = file.getName();
+  const mimeType = file.getMimeType();
+
+  Logger.log(`\nProcessing file: ${filename}`);
+  Logger.log(`MIME type: ${mimeType}`);
+
+  // Get PDF blob and convert to base64
+  const pdfBlob = file.getBlob();
+  const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+  Logger.log(`PDF size (base64): ${pdfBase64.length} chars`);
+
+  // Get ID token (with fallback to service account)
+  let idToken = ScriptApp.getIdentityToken();
+  Logger.log(`Has identity token from ScriptApp: ${!!idToken}`);
+
+  if (!idToken) {
+    // Fallback to service account
+    Logger.log('Using service account fallback for auth...');
+    const serviceAccount = Config.getInvokerServiceAccount();
+    Logger.log(`Service account: ${serviceAccount}`);
+
+    const oauthToken = ScriptApp.getOAuthToken();
+    const iamUrl = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:generateIdToken`;
+
+    try {
+      const iamResponse = UrlFetchApp.fetch(iamUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          Authorization: `Bearer ${oauthToken}`,
+        },
+        payload: JSON.stringify({
+          audience: cloudRunUrl,
+          includeEmail: true,
+        }),
+        muteHttpExceptions: true,
+      });
+
+      const iamStatus = iamResponse.getResponseCode();
+      if (iamStatus === 200) {
+        const iamResult = JSON.parse(iamResponse.getContentText());
+        idToken = iamResult.token;
+        Logger.log('Got ID token from service account');
+      } else {
+        Logger.log(`IAM request failed: ${iamStatus} - ${iamResponse.getContentText()}`);
+        return;
+      }
+    } catch (iamError) {
+      Logger.log(`IAM error: ${iamError}`);
+      return;
+    }
+  }
+
+  // Call Cloud Run OCR
+  const url = `${cloudRunUrl}/ocr`;
+  Logger.log(`\nCalling OCR endpoint: ${url}`);
+
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        pdfBase64,
+        context: { filename },
+      }),
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      muteHttpExceptions: true,
+    });
+
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    Logger.log(`\nResponse status: ${statusCode}`);
+    Logger.log(`Response body: ${responseText}`);
+
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      Logger.log(`\n=== OCR Result ===`);
+      Logger.log(`Service Name: ${result.serviceName}`);
+      Logger.log(`Event Month: ${result.eventMonth}`);
+      Logger.log(`Doc Type: ${result.docType}`);
+      Logger.log(`Confidence: ${result.confidence}`);
+      Logger.log(`Has Invoice in Content: ${result.hasInvoiceInContent}`);
+      Logger.log(`Has Receipt in Content: ${result.hasReceiptInContent}`);
+      Logger.log(`Notes: ${result.notes}`);
+
+      // Check thresholds
+      const CONFIDENCE_THRESHOLD = 0.7;
+      Logger.log(`\n=== Threshold Check ===`);
+      Logger.log(`Confidence >= ${CONFIDENCE_THRESHOLD}: ${result.confidence >= CONFIDENCE_THRESHOLD}`);
+      Logger.log(`Event Month present: ${!!result.eventMonth}`);
+      Logger.log(`Would be marked as unknown: ${result.confidence < CONFIDENCE_THRESHOLD || !result.eventMonth}`);
+    }
+  } catch (error) {
+    Logger.log(`\nError calling OCR: ${error}`);
+  }
+}
+(globalThis as any).debugInboxOcr = debugInboxOcr;
+
+/**
  * Setup trigger for inbox processing (every 15 minutes)
  */
 function setupInboxTrigger(): void {

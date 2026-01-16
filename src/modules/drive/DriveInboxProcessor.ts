@@ -52,7 +52,8 @@ export class DriveInboxProcessor {
     this.namingService = new FileNamingService();
     this.logger = new DriveInboxLogger(Config.getLogSheetId());
     this.inboxFolderId = Config.getInboxFolderId();
-    this.cloudRunOcrUrl = Config.getVendorCloudRunUrl();
+    // Use email-to-pdf service which has the /ocr endpoint
+    this.cloudRunOcrUrl = Config.getCloudRunUrl();
   }
 
   /**

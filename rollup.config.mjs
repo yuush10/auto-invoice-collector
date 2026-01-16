@@ -292,6 +292,10 @@ function setupInboxTrigger() {
 function removeInboxTrigger() {
   return globalThis.removeInboxTrigger();
 }
+
+function debugInboxOcr() {
+  return globalThis.debugInboxOcr();
+}
 `
   },
   plugins: [
