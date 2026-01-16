@@ -617,6 +617,18 @@ This installs a macOS URL handler that responds to `invoicecollector://` links, 
 
 The Drive inbox feature allows you to upload PDF files directly to Google Drive for automatic processing.
 
+### Prerequisites
+
+The Drive inbox feature uses the `email-to-pdf` Cloud Run service for OCR processing. Ensure:
+
+1. **Cloud Run service deployed** with the `/ocr` endpoint
+2. **GEMINI_API_KEY configured** on the Cloud Run service:
+   ```bash
+   gcloud run services update email-to-pdf \
+     --region=asia-northeast1 \
+     --set-env-vars="GEMINI_API_KEY=YOUR_API_KEY"
+   ```
+
 ### Setup
 
 1. **Create inbox folder** in Google Drive (or use an existing folder)

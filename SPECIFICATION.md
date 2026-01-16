@@ -52,12 +52,12 @@ Auto Invoice Collector is a cloud-based system that automatically collects invoi
 │  │                  │  │                    │  │                │  │                │
 │  │ - Invoice emails │  │ email-to-pdf:      │  │ gemini-2.0-    │  │ /Invoices/     │
 │  │ - Attachments    │  │  - HTML→PDF        │  │ flash          │  │  └─2025-01/    │
-│  │ - Processed label│  │                    │  │                │  │  └─2025-02/    │
-│  │                  │  │ invoice-ocr:       │  │ - OCR          │  │  └─...         │
-│  └──────────────────┘  │  - Puppeteer       │  │ - Extraction   │  │                │
-│                        │  - Vendor login    │  │ - Journal      │  │ Files:         │
-│                        │  - PDF download    │  │   Suggestion   │  │ YYYY-MM-Name-  │
-│                        │  - OCR processing  │  │                │  │ 請求書.pdf     │
+│  │ - Processed label│  │  - /ocr endpoint   │  │                │  │  └─2025-02/    │
+│  │                  │  │                    │  │ - OCR          │  │  └─...         │
+│  └──────────────────┘  │ invoice-ocr:       │  │ - Extraction   │  │                │
+│                        │  - Puppeteer       │  │ - Journal      │  │ Files:         │
+│                        │  - Vendor login    │  │   Suggestion   │  │ YYYY-MM-Name-  │
+│                        │  - PDF download    │  │                │  │ 請求書.pdf     │
 │                        └────────────────────┘  └────────────────┘  └────────────────┘
 │                                 │                                                    │
 │                                 ▼                                                    │
@@ -148,20 +148,22 @@ GAS ──► Google Drive ──► Gemini API ──► DraftSheet ──► R
 User uploads PDF to Inbox folder
          │
          ▼
-GAS (processInbox) ──► Cloud Run (/ocr) ──► Google Drive
-         │                   │                   │
-         │                   ▼                   ▼
-         │              Gemini OCR:         If success:
-         │              - service_name       Move to /YYYY-MM/
-         │              - event_month        Rename: YYYY-MM-Name-Type.pdf
+GAS (processInbox) ──► email-to-pdf (/ocr) ──► Google Drive
+         │                   │                     │
+         │                   ▼                     ▼
+         │              Gemini OCR:           If success:
+         │              - service_name         Move to /YYYY-MM/
+         │              - event_month          Rename: YYYY-MM-Name-Type.pdf
          │              - doc_type
-         │              - confidence       If unknown/low confidence:
-         │                                   Prefix: 不明-
-         │                                   Keep in inbox
+         │              - confidence         If unknown/low confidence:
+         │                                     Prefix: 不明-
+         │                                     Keep in inbox
          ▼
     DriveInboxLog
     (processing records)
 ```
+
+**Note**: The `/ocr` endpoint is on the `email-to-pdf` Cloud Run service (same service used for email body conversion).
 
 ### Important Notes
 
@@ -938,6 +940,8 @@ node ./bin/collect.js collect --vendor=canva --target-month=2025-01 --token=<tok
 |---|---|---|
 | OCR-only endpoint | ✅ | cloud-run/src/routes/ocr.ts |
 | FileNamingService cleanup | ✅ | Removed from Cloud Run (GAS only) |
+
+**Note**: The `/ocr` endpoint is provided by the `email-to-pdf` Cloud Run service (same service used for email body conversion). This service requires the `GEMINI_API_KEY` environment variable to be configured.
 
 #### Phase 5.3: Unified Naming Strategy
 
