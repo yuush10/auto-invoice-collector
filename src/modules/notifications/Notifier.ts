@@ -3,8 +3,62 @@
  */
 
 import { ProcessingError, ProcessingResult, VendorAuthNotification } from '../../types';
-import { InboxProcessingSummary } from '../logging/DriveInboxLogger';
+import { DriveInboxLogRecord, InboxProcessingSummary } from '../logging/DriveInboxLogger';
 import { AppLogger } from '../../utils/logger';
+
+/**
+ * Error categories for inbox processing with actionable guidance
+ */
+type InboxErrorCategory =
+  | 'ocr_failure'
+  | 'authentication'
+  | 'network_timeout'
+  | 'file_access'
+  | 'low_confidence'
+  | 'other';
+
+interface CategorizedInboxError {
+  category: InboxErrorCategory;
+  label: string;
+  guidance: string;
+  records: Array<{
+    timestamp: Date;
+    fileName: string;
+    errorMessage?: string;
+    confidence?: number;
+    eventMonth?: string;
+  }>;
+}
+
+const ERROR_CATEGORY_CONFIG: Record<
+  InboxErrorCategory,
+  { label: string; guidance: string }
+> = {
+  ocr_failure: {
+    label: 'OCR Failures',
+    guidance: 'Retry later. If persistent, check Cloud Run service status.',
+  },
+  authentication: {
+    label: 'Authentication Errors',
+    guidance: 'Check service account permissions for Cloud Run invoker.',
+  },
+  network_timeout: {
+    label: 'Network/Timeout Errors',
+    guidance: 'Retry later. Check network connectivity.',
+  },
+  file_access: {
+    label: 'File Access Errors',
+    guidance: 'Verify file exists and permissions in Drive inbox folder.',
+  },
+  low_confidence: {
+    label: 'Low Confidence / Unknown',
+    guidance: 'Manually review and rename in Drive inbox folder.',
+  },
+  other: {
+    label: 'Other Errors',
+    guidance: 'Check logs for details. File kept in inbox for manual review.',
+  },
+};
 
 export class Notifier {
   private adminEmail: string;
@@ -224,49 +278,204 @@ export class Notifier {
     report += `Skipped (non-PDF): ${inboxSummary.skipped}\n`;
     report += `Unknown/Low Confidence: ${inboxSummary.unknownKept}\n\n`;
 
-    // Combined Errors
-    const totalErrors = result.errors.length + inboxSummary.errors;
-    if (totalErrors > 0) {
-      report += '=== Errors ===\n';
-
-      if (result.errors.length > 0) {
-        report += 'Email Processing Errors:\n';
-        result.errors.forEach((err, index) => {
-          report += `  ${index + 1}. ${err.serviceName} - ${err.error}\n`;
-        });
-      }
-
-      if (inboxSummary.errorRecords.length > 0) {
-        report += 'Drive Inbox Errors:\n';
-        inboxSummary.errorRecords.forEach((record, index) => {
-          report += `  ${index + 1}. ${record.originalFileName} - ${record.errorMessage || 'Unknown error'}\n`;
-        });
-      }
+    // Email Processing Errors
+    if (result.errors.length > 0) {
+      report += '=== Email Processing Errors ===\n';
+      result.errors.forEach((err, index) => {
+        report += `  ${index + 1}. ${err.serviceName} - ${err.error}\n`;
+      });
       report += '\n';
     }
 
-    // Combined Needs Review
-    const totalNeedsReview = result.needsReview.length + inboxSummary.unknownKept;
-    if (totalNeedsReview > 0) {
-      report += '=== Needs Review ===\n';
+    // Drive Inbox Issues (categorized)
+    const totalInboxIssues = inboxSummary.errors + inboxSummary.unknownKept;
+    if (totalInboxIssues > 0) {
+      report += this.formatInboxErrorSection(
+        inboxSummary.errorRecords,
+        inboxSummary.unknownRecords
+      );
+    }
 
-      if (result.needsReview.length > 0) {
-        report += 'Email Processing:\n';
-        result.needsReview.forEach((item, index) => {
-          report += `  ${index + 1}. ${item}\n`;
-        });
-      }
-
-      if (inboxSummary.unknownRecords.length > 0) {
-        report += 'Drive Inbox (unknown/low confidence):\n';
-        inboxSummary.unknownRecords.forEach((record, index) => {
-          const confidence = record.confidence !== undefined ? ` (${Math.round(record.confidence * 100)}%)` : '';
-          report += `  ${index + 1}. ${record.originalFileName}${confidence}\n`;
-        });
-      }
+    // Email Needs Review
+    if (result.needsReview.length > 0) {
+      report += '=== Email Processing - Needs Review ===\n';
+      result.needsReview.forEach((item, index) => {
+        report += `  ${index + 1}. ${item}\n`;
+      });
+      report += '\n';
     }
 
     return report;
+  }
+
+  /**
+   * Format time as "HH:MM AM/PM" in Asia/Tokyo timezone
+   */
+  formatTimeOnly(date: Date): string {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Tokyo',
+    });
+  }
+
+  /**
+   * Categorize an error message into a specific category
+   */
+  private categorizeErrorMessage(errorMessage: string | undefined): InboxErrorCategory {
+    if (!errorMessage) {
+      return 'other';
+    }
+
+    const lowerMessage = errorMessage.toLowerCase();
+
+    // OCR failures
+    if (lowerMessage.includes('ocr request failed') || lowerMessage.includes('ocr')) {
+      return 'ocr_failure';
+    }
+
+    // Authentication errors
+    if (
+      lowerMessage.includes('401') ||
+      lowerMessage.includes('403') ||
+      lowerMessage.includes('token') ||
+      lowerMessage.includes('unauthorized') ||
+      lowerMessage.includes('forbidden')
+    ) {
+      return 'authentication';
+    }
+
+    // Network/Timeout errors
+    if (
+      lowerMessage.includes('timeout') ||
+      lowerMessage.includes('network') ||
+      lowerMessage.includes('connection') ||
+      lowerMessage.includes('econnrefused')
+    ) {
+      return 'network_timeout';
+    }
+
+    // File access errors
+    if (
+      lowerMessage.includes('access') ||
+      lowerMessage.includes('permission') ||
+      lowerMessage.includes('not found') ||
+      lowerMessage.includes('does not exist')
+    ) {
+      return 'file_access';
+    }
+
+    return 'other';
+  }
+
+  /**
+   * Categorize inbox errors and unknown records into groups
+   */
+  categorizeInboxErrors(
+    errorRecords: DriveInboxLogRecord[],
+    unknownRecords: DriveInboxLogRecord[]
+  ): CategorizedInboxError[] {
+    const categoryMap = new Map<InboxErrorCategory, CategorizedInboxError>();
+
+    // Process error records
+    for (const record of errorRecords) {
+      const category = this.categorizeErrorMessage(record.errorMessage);
+      if (!categoryMap.has(category)) {
+        const config = ERROR_CATEGORY_CONFIG[category];
+        categoryMap.set(category, {
+          category,
+          label: config.label,
+          guidance: config.guidance,
+          records: [],
+        });
+      }
+      categoryMap.get(category)!.records.push({
+        timestamp: record.timestamp,
+        fileName: record.originalFileName,
+        errorMessage: record.errorMessage,
+        confidence: record.confidence,
+        eventMonth: record.eventMonth,
+      });
+    }
+
+    // Process unknown/low-confidence records
+    if (unknownRecords.length > 0) {
+      const config = ERROR_CATEGORY_CONFIG.low_confidence;
+      categoryMap.set('low_confidence', {
+        category: 'low_confidence',
+        label: config.label,
+        guidance: config.guidance,
+        records: unknownRecords.map((record) => ({
+          timestamp: record.timestamp,
+          fileName: record.originalFileName,
+          errorMessage: record.errorMessage,
+          confidence: record.confidence,
+          eventMonth: record.eventMonth,
+        })),
+      });
+    }
+
+    // Return categories in a consistent order
+    const order: InboxErrorCategory[] = [
+      'ocr_failure',
+      'authentication',
+      'network_timeout',
+      'file_access',
+      'low_confidence',
+      'other',
+    ];
+
+    return order
+      .filter((cat) => categoryMap.has(cat))
+      .map((cat) => categoryMap.get(cat)!);
+  }
+
+  /**
+   * Format inbox error section with categorization and actionable guidance
+   */
+  formatInboxErrorSection(
+    errorRecords: DriveInboxLogRecord[],
+    unknownRecords: DriveInboxLogRecord[]
+  ): string {
+    const totalIssues = errorRecords.length + unknownRecords.length;
+    if (totalIssues === 0) {
+      return '';
+    }
+
+    const categories = this.categorizeInboxErrors(errorRecords, unknownRecords);
+    let section = `=== Drive Inbox Issues (${totalIssues}) ===\n\n`;
+
+    for (const category of categories) {
+      const fileCount = category.records.length;
+      const filesLabel = fileCount === 1 ? 'file' : 'files';
+      section += `[${category.label}] (${fileCount} ${filesLabel})\n`;
+
+      for (const record of category.records) {
+        const timeStr = this.formatTimeOnly(record.timestamp);
+        section += `  - ${timeStr}: ${record.fileName}\n`;
+
+        if (category.category === 'low_confidence') {
+          // Show confidence and event month for low confidence
+          const confStr =
+            record.confidence !== undefined
+              ? `${Math.round(record.confidence * 100)}%`
+              : 'N/A';
+          const monthStr = record.eventMonth || 'not detected';
+          section += `    Confidence: ${confStr}, EventMonth: ${monthStr}\n`;
+        } else if (record.errorMessage) {
+          // Show error message for errors
+          section += `    Error: ${record.errorMessage}\n`;
+        }
+
+        section += `    Action: ${category.guidance}\n\n`;
+      }
+    }
+
+    section += '---\n';
+    section += 'Need help? Files remain in inbox for manual review.\n\n';
+
+    return section;
   }
 
   /**
