@@ -351,6 +351,7 @@ Claude MUST proactively invoke project skills when context matches their descrip
 | `/merge` | After PR approval, when ready to merge | Use instead of manual merge + cleanup |
 | `/deploy` | When deploying, pushing to GAS, or user says "deploy/push/release" | Use instead of manual `clasp push` |
 | `/vendor-status` | When checking vendor credentials or cookie status | Use for auth status checks |
+| `/gas-export-check` | After creating new GAS functions, before deployment | Use after adding new API functions |
 
 **Required Behavior:**
 
