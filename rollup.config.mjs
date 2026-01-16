@@ -275,6 +275,23 @@ function api_markVendorCompleteFromLocal(token, vendorKey, targetMonth) {
 function testGetLocalCollectorCommand() {
   return globalThis.testGetLocalCollectorCommand();
 }
+
+// Drive inbox processing functions (Phase 5)
+function processInbox() {
+  return globalThis.processInbox();
+}
+
+function runInboxManually() {
+  return globalThis.runInboxManually();
+}
+
+function setupInboxTrigger() {
+  return globalThis.setupInboxTrigger();
+}
+
+function removeInboxTrigger() {
+  return globalThis.removeInboxTrigger();
+}
 `
   },
   plugins: [
