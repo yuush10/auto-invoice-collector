@@ -26,6 +26,15 @@ export interface DriveInboxLogRecord {
   errorMessage?: string;
 }
 
+export interface InboxProcessingSummary {
+  processed: number;
+  errors: number;
+  skipped: number;
+  unknownKept: number;
+  errorRecords: DriveInboxLogRecord[];
+  unknownRecords: DriveInboxLogRecord[];
+}
+
 export class DriveInboxLogger {
   private sheetId: string;
   private sheet: GoogleAppsScript.Spreadsheet.Sheet | null = null;
@@ -141,5 +150,78 @@ export class DriveInboxLogger {
     }
 
     return failed;
+  }
+
+  /**
+   * Get all log records since a given timestamp
+   */
+  getRecordsSince(since: Date): DriveInboxLogRecord[] {
+    const sheet = this.getSheet();
+    const data = sheet.getDataRange().getValues();
+    const records: DriveInboxLogRecord[] = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const timestamp = row[0] as Date;
+
+      // Skip rows before the given timestamp
+      if (timestamp < since) {
+        continue;
+      }
+
+      records.push({
+        timestamp,
+        driveFileId: row[1] as string,
+        originalFileName: row[2] as string,
+        newFileName: row[3] as string || undefined,
+        eventMonth: row[4] as string || undefined,
+        serviceName: row[5] as string || undefined,
+        docType: row[6] as string || undefined,
+        confidence: row[7] !== '' ? (row[7] as number) : undefined,
+        status: row[8] as InboxProcessingStatus,
+        targetFolderId: row[9] as string || undefined,
+        errorMessage: row[10] as string || undefined,
+      });
+    }
+
+    return records;
+  }
+
+  /**
+   * Get aggregated stats since a given timestamp
+   */
+  getStatsSince(since: Date): InboxProcessingSummary {
+    const records = this.getRecordsSince(since);
+
+    const summary: InboxProcessingSummary = {
+      processed: 0,
+      errors: 0,
+      skipped: 0,
+      unknownKept: 0,
+      errorRecords: [],
+      unknownRecords: [],
+    };
+
+    for (const record of records) {
+      switch (record.status) {
+        case 'success':
+          summary.processed++;
+          break;
+        case 'error':
+          summary.errors++;
+          summary.errorRecords.push(record);
+          break;
+        case 'skipped-non-pdf':
+          summary.skipped++;
+          break;
+        case 'unknown-kept-in-inbox':
+        case 'low-confidence':
+          summary.unknownKept++;
+          summary.unknownRecords.push(record);
+          break;
+      }
+    }
+
+    return summary;
   }
 }

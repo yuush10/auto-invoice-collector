@@ -16,6 +16,7 @@ import { FileUploader } from './modules/drive/FileUploader';
 import { DriveInboxProcessor } from './modules/drive/DriveInboxProcessor';
 import { FileNamingService } from './modules/naming/FileNamingService';
 import { ProcessingLogger } from './modules/logging/ProcessingLogger';
+import { DriveInboxLogger } from './modules/logging/DriveInboxLogger';
 import { Notifier } from './modules/notifications/Notifier';
 import { CloudRunClient } from './modules/cloudrun/CloudRunClient';
 import { ProcessingResult, DocTypeDetectionFlags } from './types';
@@ -28,6 +29,38 @@ import { WebAppApi } from './webapp/WebAppApi';
 import { DraftUpdate, PromptConfigCreate, PromptConfigUpdate } from './webapp/types';
 import { JournalEntry, DraftStatus } from './types/journal';
 import { PromptType } from './types/prompt';
+
+// Constants for timestamp tracking
+const LAST_SUMMARY_TIMESTAMP_KEY = 'LAST_DAILY_SUMMARY_TIMESTAMP';
+
+/**
+ * Get the timestamp of the last daily summary
+ * Returns 24 hours ago if not set
+ */
+function getLastSummaryTimestamp(): Date {
+  const props = PropertiesService.getScriptProperties();
+  const stored = props.getProperty(LAST_SUMMARY_TIMESTAMP_KEY);
+
+  if (stored) {
+    const parsed = new Date(stored);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  // Default to 24 hours ago if not set
+  const defaultDate = new Date();
+  defaultDate.setHours(defaultDate.getHours() - 24);
+  return defaultDate;
+}
+
+/**
+ * Store the timestamp of the current daily summary
+ */
+function setLastSummaryTimestamp(date: Date): void {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(LAST_SUMMARY_TIMESTAMP_KEY, date.toISOString());
+}
 
 /**
  * Main function that processes new invoices from Gmail
@@ -59,27 +92,65 @@ function main(): void {
 async function mainAsync(): Promise<void> {
   AppLogger.info('Auto Invoice Collector - Starting');
 
+  // Get timestamp for inbox log query (before processing)
+  const lastSummaryTimestamp = getLastSummaryTimestamp();
+  AppLogger.info(`Querying inbox logs since: ${lastSummaryTimestamp.toISOString()}`);
+
   try {
     const processor = new InvoiceProcessor();
     const result = await processor.run();
 
-    AppLogger.info(`Processing complete: ${result.processed} processed, ${result.errors.length} errors, ${result.needsReview.length} needs review`);
+    // Get inbox processing stats since last summary
+    const inboxLogger = new DriveInboxLogger(Config.getLogSheetId());
+    const inboxSummary = inboxLogger.getStatsSince(lastSummaryTimestamp);
+
+    AppLogger.info(
+      `Processing complete: ${result.processed} email processed, ${result.errors.length} email errors, ` +
+      `${inboxSummary.processed} inbox processed, ${inboxSummary.errors} inbox errors`
+    );
 
     // Send notifications
     const notifier = new Notifier(Config.getAdminEmail());
 
-    if (result.errors.length > 0) {
-      notifier.sendErrorNotification(result.errors);
+    // Combine email errors with inbox errors for error notification
+    const combinedErrors = [...result.errors];
+    for (const record of inboxSummary.errorRecords) {
+      combinedErrors.push({
+        messageId: record.driveFileId,
+        serviceName: 'DriveInbox',
+        error: record.errorMessage || `Failed to process: ${record.originalFileName}`,
+      });
     }
 
-    if (result.needsReview.length > 0) {
-      notifier.sendNeedsReviewNotification(result.needsReview);
+    if (combinedErrors.length > 0) {
+      notifier.sendErrorNotification(combinedErrors);
     }
 
-    // Send summary if there was any activity
-    if (result.processed > 0 || result.errors.length > 0) {
-      notifier.sendProcessingSummary(result);
+    // Combine needsReview with inbox unknown items
+    const combinedNeedsReview = [...result.needsReview];
+    for (const record of inboxSummary.unknownRecords) {
+      const confidence = record.confidence !== undefined ? ` (${Math.round(record.confidence * 100)}%)` : '';
+      combinedNeedsReview.push(`[DriveInbox] ${record.originalFileName}${confidence}`);
     }
+
+    if (combinedNeedsReview.length > 0) {
+      notifier.sendNeedsReviewNotification(combinedNeedsReview);
+    }
+
+    // Send combined summary if there was any activity
+    const hasActivity =
+      result.processed > 0 ||
+      result.errors.length > 0 ||
+      inboxSummary.processed > 0 ||
+      inboxSummary.errors > 0 ||
+      inboxSummary.unknownKept > 0;
+
+    if (hasActivity) {
+      notifier.sendProcessingSummaryWithInbox(result, inboxSummary);
+    }
+
+    // Update timestamp after successful processing
+    setLastSummaryTimestamp(new Date());
   } catch (error) {
     AppLogger.error('Fatal error in main', error as Error);
 
@@ -2353,25 +2424,8 @@ async function processInboxAsync(): Promise<void> {
         `${result.unknownKept} kept as unknown`
     );
 
-    // Send notification if there were errors or unknown files
-    if (result.errors > 0 || result.unknownKept > 0) {
-      const notifier = new Notifier(Config.getAdminEmail());
-
-      // Build needs review list for unknown files
-      const needsReviewItems: string[] = [];
-      if (result.unknownKept > 0) {
-        needsReviewItems.push(
-          `${result.unknownKept} files kept in inbox with '不明-' prefix (need manual review)`
-        );
-      }
-      if (result.errors > 0) {
-        needsReviewItems.push(
-          `${result.errors} files had processing errors (check DriveInboxLog sheet)`
-        );
-      }
-
-      notifier.sendNeedsReviewNotification(needsReviewItems);
-    }
+    // Note: Notifications are now consolidated in the daily summary (mainAsync)
+    // DriveInboxLogger tracks all processing results for later query
   } catch (error) {
     AppLogger.error('Fatal error in inbox processing', error as Error);
     throw error;
